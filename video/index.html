@@ -261,6 +261,7 @@ function TargAudio(){
   A.sample=(k,fallback)=>{if(!ctx)return null;const s=S[k];
     if(s&&s.data){const d=s.data,g=s.gain;let i=0;const vo={f:()=>i<d.length?d[i++]*g*vo.amp:null,t:0,dry:1,clean:true,amp:1};voices.push(vo);return vo;}
     if(fallback){A.play(fallback);return voices[voices.length-1];}return null;};
+  A.dur=k=>S[k]&&S[k].data?S[k].data.length/sr:0; // length of a recorded sound in seconds (0 if not loaded)
   A.stop=vo=>{if(!vo||vo.fade)return;vo.fade=true;const f=vo.f;let g=1;vo.f=t=>{g-=1/(sr*0.08);if(g<=0)return null;const s=f(t);return s===null?null:s*g;};};
   // the player's car was hit: play the Crash sound, and keep the game's own explosion/"enemy destroyed"
   // effects quiet while the car's death plays out (it is the player who died, not an enemy)
@@ -427,14 +428,15 @@ function clearCheck(){
   if(started&&boardUp()&&prevB1===1&&b===0&&!fanfareIn){fanfareIn=24;spectarHeard=false;} // let the last explosion show first
   prevB1=b;
   if(fanfareIn&&--fanfareIn===0){frozen={type:'fan',f:0,dur:FAN_DUR,parts:[],arm:false,skip:false};au.hold=true;
-    frozen.snd=[au.sample('fanfare','fanfare'),au.sample('fireworks')];fwStart();} // recorded brass fanfare + fireworks booms/crackle
+    frozen.snd=[au.sample('fanfare','fanfare'),au.sample('fireworks')];fwStart();
+    frozen.rep=Math.round((au.dur('fanfare')||2.7)*60);} // frame at which the brass phrase is played a second time // recorded brass fanfare + fireworks booms/crackle
 }
 function fanEnd(){frozen=null;au.hold=false;fwStop();}
 
 // ---------- fireworks: two video clips played side by side over the board during the fanfare ----------
 // The clips have a black background. Each frame is copied to a small canvas and every pixel's brightness becomes its
 // opacity (black -> fully transparent), so only the sparks are drawn over the game. x/y/w/h are in board pixels (240x256).
-const FAN_DUR=330,FAN_FADE=36; // 5.5 s celebration, fading out over the last 0.6 s
+const FAN_DUR=405,FAN_FADE=36; // 6.75 s celebration (the brass phrase twice), fading out over the last 0.6 s
 const FW=[{url:'video/fireworks1.mp4',x:-14,y:2,w:208,h:156},{url:'video/fireworks2.mp4',x:72,y:90,w:178,h:178}];
 for(const o of FW){const v=document.createElement('video');v.muted=true;v.defaultMuted=true;v.playsInline=true;
   v.setAttribute('muted','');v.setAttribute('playsinline','');v.setAttribute('webkit-playsinline','');v.preload='auto';
@@ -585,6 +587,7 @@ function step(){
   if(frozen){au.frame([],FCYC);if(frozen.type==='hyper')hyperTick(frozen);else{const z=frozen; // FIRE (pressed afresh, after the first 1.5 s) cuts the celebration short
       if(!m.inp.fire)z.arm=true;
       if(z.arm&&m.inp.fire&&!z.skip&&z.f>90&&z.f<z.dur-FAN_FADE){z.skip=true;z.f=z.dur-FAN_FADE;z.snd.forEach(au.stop);}
+      if(!z.skip&&z.f===z.rep)z.snd.push(au.sample('fanfare','fanfare')); // brass phrase again, back to back
       if(++z.f>=z.dur)fanEnd();}return;}
   const wasAlive=alive();f0=m.cpu.cycles;m.frame();
   frameNo++;
