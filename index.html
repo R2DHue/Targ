@@ -261,6 +261,7 @@ function TargAudio(){
   A.sample=(k,fallback)=>{if(!ctx)return null;const s=S[k];
     if(s&&s.data){const d=s.data,g=s.gain;let i=0;const vo={f:()=>i<d.length?d[i++]*g*vo.amp:null,t:0,dry:1,clean:true,amp:1};voices.push(vo);return vo;}
     if(fallback){A.play(fallback);return voices[voices.length-1];}return null;};
+  A.dur=k=>S[k]&&S[k].data?S[k].data.length/sr:0; // length of a recorded sound in seconds (0 if not loaded)
   A.stop=vo=>{if(!vo||vo.fade)return;vo.fade=true;const f=vo.f;let g=1;vo.f=t=>{g-=1/(sr*0.08);if(g<=0)return null;const s=f(t);return s===null?null:s*g;};};
   // the player's car was hit: play the Crash sound, and keep the game's own explosion/"enemy destroyed"
   // effects quiet while the car's death plays out (it is the player who died, not an enemy)
@@ -427,14 +428,15 @@ function clearCheck(){
   if(started&&boardUp()&&prevB1===1&&b===0&&!fanfareIn){fanfareIn=24;spectarHeard=false;} // let the last explosion show first
   prevB1=b;
   if(fanfareIn&&--fanfareIn===0){frozen={type:'fan',f:0,dur:FAN_DUR,parts:[],arm:false,skip:false};au.hold=true;
-    frozen.snd=[au.sample('fanfare','fanfare'),au.sample('fireworks')];fwStart();} // recorded brass fanfare + fireworks booms/crackle
+    frozen.snd=[au.sample('fanfare','fanfare'),au.sample('fireworks')];fwStart();
+    frozen.rep=Math.round((au.dur('fanfare')||2.7)*60);} // frame at which the brass phrase is played a second time // recorded brass fanfare + fireworks booms/crackle
 }
 function fanEnd(){frozen=null;au.hold=false;fwStop();}
 
 // ---------- fireworks: two video clips played side by side over the board during the fanfare ----------
 // The clips have a black background. Each frame is copied to a small canvas and every pixel's brightness becomes its
 // opacity (black -> fully transparent), so only the sparks are drawn over the game. x/y/w/h are in board pixels (240x256).
-const FAN_DUR=330,FAN_FADE=36; // 5.5 s celebration, fading out over the last 0.6 s
+const FAN_DUR=405,FAN_FADE=36; // 6.75 s celebration (the brass phrase twice), fading out over the last 0.6 s
 const FW=[{url:'video/fireworks1.mp4',x:-14,y:2,w:208,h:156},{url:'video/fireworks2.mp4',x:72,y:90,w:178,h:178}];
 for(const o of FW){const v=document.createElement('video');v.muted=true;v.defaultMuted=true;v.playsInline=true;
   v.setAttribute('muted','');v.setAttribute('playsinline','');v.setAttribute('webkit-playsinline','');v.preload='auto';
@@ -585,6 +587,7 @@ function step(){
   if(frozen){au.frame([],FCYC);if(frozen.type==='hyper')hyperTick(frozen);else{const z=frozen; // FIRE (pressed afresh, after the first 1.5 s) cuts the celebration short
       if(!m.inp.fire)z.arm=true;
       if(z.arm&&m.inp.fire&&!z.skip&&z.f>90&&z.f<z.dur-FAN_FADE){z.skip=true;z.f=z.dur-FAN_FADE;z.snd.forEach(au.stop);}
+      if(!z.skip&&z.f===z.rep)z.snd.push(au.sample('fanfare','fanfare')); // brass phrase again, back to back
       if(++z.f>=z.dur)fanEnd();}return;}
   const wasAlive=alive();f0=m.cpu.cycles;m.frame();
   frameNo++;
@@ -631,8 +634,10 @@ addEventListener('keydown',e=>{if(e.code==='KeyP'){paused=!paused;return;}if(e.c
 addEventListener('keyup',e=>{const k=K[e.code];if(!k)return;e.preventDefault();
   if(DIRS[k]){const i=keyStack.indexOf(k);if(i>=0)keyStack.splice(i,1);applyDir();}else I[k]=0;});
 // buttons (pointer capture keeps a press alive if the finger drifts slightly)
-const hold=(el,k)=>{const on=e=>{e.preventDefault();try{el.setPointerCapture(e.pointerId);}catch(_){}I[k]=1;el.classList.add('on');if(k==='start1'||k==='start2')started=true;},
-  off=e=>{e.preventDefault();I[k]=0;el.classList.remove('on');};
+const holds=[];
+const hold=(el,k)=>{const h={el,k,touch:false};holds.push(h);
+  const on=e=>{e.preventDefault();try{el.setPointerCapture(e.pointerId);}catch(_){}I[k]=1;h.touch=e.pointerType==='touch';el.classList.add('on');if(k==='start1'||k==='start2')started=true;},
+  off=e=>{e.preventDefault();I[k]=0;h.touch=false;el.classList.remove('on');};
   el.addEventListener('pointerdown',on);['pointerup','pointercancel','lostpointercapture'].forEach(t=>el.addEventListener(t,off));};
 hold(document.getElementById('fire'),'fire');hold(document.getElementById('coin'),'coin');
 hold(document.getElementById('start'),'start1');hold(document.getElementById('start2'),'start2');
@@ -648,10 +653,22 @@ function dir4(x,y,old){const horiz=old==='left'||old==='right';let ax;
 function padPos(e){const r=stickEl.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2);
   padDir=Math.hypot(dx,dy)<r.width*0.065?null:dir4(dx,dy,padDir);applyDir();}
 function padRel(e){if(e&&e.pointerId!==undefined&&e.pointerId!==pid)return;pid=null;padDir=null;applyDir();}
-pad.addEventListener('pointerdown',e=>{e.preventDefault();if(pid!==null)return;pid=e.pointerId;try{pad.setPointerCapture(pid);}catch(_){}padPos(e);});
+let padTouch=false;
+pad.addEventListener('pointerdown',e=>{e.preventDefault();
+  // A new touch always takes over the stick. (It used to be ignored while an earlier touch was still "held" - but
+  // iPadOS sometimes never reports that touch being lifted, which left the stick locked in one direction for good.)
+  if(pid!==null&&pid!==e.pointerId){try{pad.releasePointerCapture(pid);}catch(_){}}
+  pid=e.pointerId;padTouch=e.pointerType==='touch';padDir=null;try{pad.setPointerCapture(pid);}catch(_){}padPos(e);});
 pad.addEventListener('pointermove',e=>{if(e.pointerId===pid){e.preventDefault();padPos(e);}});
 ['pointerup','pointercancel','lostpointercapture'].forEach(t=>pad.addEventListener(t,padRel));
 addEventListener('blur',()=>{if(pid!==null)padRel();});
+// Safety net for lifts the browser failed to report as pointer events: whenever any finger leaves the screen, check
+// which fingers are really still down and let go of the stick / buttons whose finger is gone.
+const touchSweep=e=>{const live=[...e.touches].map(t=>t.target);
+  if(pid!==null&&padTouch&&!live.some(t=>t===pad||pad.contains(t)))padRel();
+  for(const h of holds)if(h.touch&&!live.some(t=>t===h.el||h.el.contains(t))){I[h.k]=0;h.touch=false;h.el.classList.remove('on');}};
+['touchend','touchcancel'].forEach(t=>document.addEventListener(t,touchSweep,{capture:true,passive:true}));
+document.addEventListener('visibilitychange',()=>{if(document.hidden){if(pid!==null)padRel();for(const h of holds){I[h.k]=0;h.touch=false;h.el.classList.remove('on');}}});
 document.addEventListener('visibilitychange',()=>{paused=document.hidden;});
 // Safari: block pinch/double-tap zoom and long-press menus that hijack game touches
 ['gesturestart','gesturechange','dblclick','contextmenu'].forEach(t=>document.addEventListener(t,e=>e.preventDefault(),{passive:false}));
