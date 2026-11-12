@@ -342,8 +342,10 @@ let started=false;
 // gone (it hit something) or the car has turned, the next one goes after the time that spacing would take.
 // Each extra is launched from wherever the car is *now*, in the direction it is *now* heading (never from an old
 // launch spot that could be behind the car).
-const MISSILE_SPACING=22; // px between consecutive missiles; tune here
-const EXTRA_MISSILES=3;   // extras per shot, so 4 missiles in total
+// While FIRE is held the extras never run out: missiles keep leaving the car's nose in an unbroken stream until the
+// button is released. A quick tap still gives the minimum volley below.
+const MISSILE_SPACING=16; // px between consecutive missiles (was 22); tune here
+const EXTRA_MISSILES=3;   // minimum extras per shot (a tap = 4 missiles in total); holding FIRE keeps them coming
 let ghosts=[],pend=null,prevAct=0,lastMx=0,lastMy=0,gSpeed=2.25,headX=0,headY=0,hpx=0,hpy=0;const mCode={};
 function moveGhost(g){ // advance one extra missile; returns false when it is spent (hit something / left the board)
   g.acc+=gSpeed;
@@ -374,6 +376,8 @@ function ghostStep(){ // returns 1 when the game fires, 2 when an extra missile 
     if(dx||dy){pend={dx,dy,left:EXTRA_MISSILES,ref:null,since:0};ev=1;}} // a new shot queues a fresh set
   else if(act&&prevAct){const d=Math.abs(mx-lastMx)+Math.abs(my-lastMy);if(d<8)gSpeed=gSpeed*0.9+d*0.1;}
   prevAct=act;lastMx=mx;lastMy=my;
+  // FIRE held with no volley in progress (e.g. pressed again while the game's own missile is still flying): start the stream anyway
+  if(!pend&&started&&m.inp.fire&&alive()&&(headX||headY))pend={dx:headX,dy:headY,left:0,ref:ghosts[ghosts.length-1]||null,since:0};
   if(pend){pend.since++;
     const r=pend.ref; // missile in front: the game's own (null) or the last extra launched
     const ahead=r?(r.dead||!ghosts.includes(r)?null:aheadOfCar(r.x,r.y,px,py)):(act?aheadOfCar(mx,my,px,py):null);
@@ -381,7 +385,7 @@ function ghostStep(){ // returns 1 when the game fires, 2 when an extra missile 
     if(ahead!==null?ahead>=MISSILE_SPACING||pend.since>=3*tWait:pend.since>=tWait){
       let dx=headX,dy=headY;if(!dx&&!dy){dx=pend.dx;dy=pend.dy;}
       const g={x:px+dx,y:py+dy,dx,dy,acc:0,trav:0,code:mCode[dx?'h':'v']??((m.mol>>4)|((m.cpl&0x40)?16:0))};
-      ghosts.push(g);pend.ref=g;pend.since=0;if(--pend.left<=0)pend=null;ev=2;}}
+      ghosts.push(g);pend.ref=g;pend.since=0;if(--pend.left<=0&&!m.inp.fire)pend=null;ev=2;}} // held FIRE = endless stream
   ghosts=ghosts.filter(moveGhost);
   return ev;
 }
