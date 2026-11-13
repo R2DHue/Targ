@@ -32,17 +32,53 @@ html,body{margin:0;height:100%;height:100dvh;-webkit-text-size-adjust:100%;backg
 .btn{position:absolute;top:max(12px,env(safe-area-inset-top));font:700 15px sans-serif;background:#222c;color:#ddd;border:1px solid #666;border-radius:10px;padding:10px 16px}
 #coin{left:max(14px,env(safe-area-inset-left))}#start{left:calc(max(14px,env(safe-area-inset-left)) + 92px)}
 #start2{left:calc(max(14px,env(safe-area-inset-left)) + 205px)}
+#snd{left:calc(max(14px,env(safe-area-inset-left)) + 262px)}
+/* ---- sideways screens: the four buttons sit in two rows inside the left margin so none of them covers the board ---- */
+@media (orientation:landscape){
+  #coin{left:max(14px,env(safe-area-inset-left))}
+  #snd{left:calc(max(14px,env(safe-area-inset-left)) + 88px)}
+  #start{left:max(14px,env(safe-area-inset-left));top:calc(max(12px,env(safe-area-inset-top)) + 50px)}
+  #start2{left:calc(max(14px,env(safe-area-inset-left)) + 120px);top:calc(max(12px,env(safe-area-inset-top)) + 50px)}
+  #help{max-width:calc(min(22vw,240px) - 28px);line-height:1.45}
+}
+@media (orientation:landscape) and (max-width:860px){
+  .btn{font-size:12px;padding:7px 9px;border-radius:8px}
+  #snd{left:calc(max(14px,env(safe-area-inset-left)) + 62px)}
+  #start{top:calc(max(12px,env(safe-area-inset-top)) + 40px)}
+  #start2{left:calc(max(14px,env(safe-area-inset-left)) + 90px);top:calc(max(12px,env(safe-area-inset-top)) + 40px)}
+  #help{font-size:10px}
+}
 #help{position:absolute;right:max(14px,env(safe-area-inset-right));top:max(12px,env(safe-area-inset-top));color:#777;font-size:12px;text-align:right}
+/* ---- upright phone / tablet: board across the full width under the buttons, controls underneath ---- */
+@media (orientation:portrait){
+  #c,#fx{top:calc(max(12px,env(safe-area-inset-top)) + 52px);transform:translateX(-50%);height:var(--bh,calc(100vw*256/240))}
+  #help{display:none}
+  #fire{width:min(30vw,200px);height:min(30vw,200px);font-size:24px;bottom:max(3vh,env(safe-area-inset-bottom))}
+  #hyper{width:min(18vw,120px);height:min(18vw,120px);font-size:13px;left:calc(max(10px,env(safe-area-inset-left)) + min(6vw,40px));bottom:calc(max(3vh,env(safe-area-inset-bottom)) + min(30vw,200px) + 14px)}
+  #dpad{width:min(40vw,260px);height:min(40vw,260px);right:max(14px,env(safe-area-inset-right));bottom:max(3vh,env(safe-area-inset-bottom))}
+  .arrow{font-size:min(4.4vw,26px)}
+}
 #msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:20px;background:#000c;z-index:9}
 </style></head><body>
 <canvas id="c" width="240" height="256"></canvas>
-<button class="btn" id="coin">COIN</button><button class="btn" id="start">1P START</button><button class="btn" id="start2">2P</button><button class="btn" id="snd" style="left:calc(max(14px,env(safe-area-inset-left)) + 262px)">🔊</button>
+<button class="btn" id="coin">COIN</button><button class="btn" id="start">1P START</button><button class="btn" id="start2">2P</button><button class="btn" id="snd">🔊</button>
 <div id="help">Keys: arrows / WASD move · Space fire · H hyperspace<br>5 coin · 1 / 2 start · P pause · 🔊 sound</div>
 <canvas id="fx" width="720" height="768"></canvas>
 <div id="fire">FIRE</div>
 <div id="hyper"><span id="hyt">HYPER</span></div>
 <div id="dpad" role="group" aria-label="Four-way joystick"><div id="padZone"></div><div id="stick"><span class="arrow up" id="dup">▲</span><span class="arrow down" id="ddown">▼</span><span class="arrow left" id="dleft">◀</span><span class="arrow right" id="dright">▶</span><div id="knob"></div></div></div>
 <div id="msg">Loading…</div>
+<script>// Upright screens: size the board to the largest WHOLE multiple of its 240x256 picture, counted in real screen
+// pixels, that fits the width and leaves room for the controls (iPhone 1290x2796: 5x = 1200x1280 px, was ~2.8x).
+(function(){const fit=()=>{const R=document.documentElement,st=R.style;
+  if(!matchMedia('(orientation:portrait)').matches){st.removeProperty('--bh');return;}
+  const dpr=window.devicePixelRatio||1,c=document.getElementById('c'),pad=document.getElementById('dpad');
+  const top=c.getBoundingClientRect().top,ctrl=pad.offsetHeight+(innerHeight-pad.getBoundingClientRect().bottom)+18;
+  const n=Math.max(1,Math.floor(Math.min(R.clientWidth*dpr/240,(innerHeight-top-ctrl)*dpr/256)));
+  st.setProperty('--bh',(n*256/dpr)+'px');};
+  fit();addEventListener('resize',fit);addEventListener('orientationchange',()=>setTimeout(fit,250));
+  if(window.visualViewport)visualViewport.addEventListener('resize',fit);})();
+</script>
 <script>// Compact NMOS 6502 core (documented opcodes) - written for this project
 function CPU6502(read, write){
   const c=this; c.read=read; c.write=write;
@@ -198,6 +234,7 @@ const TONEPROM=[229, 229, 237, 237, 229, 229, 237, 237, 231, 231, 239, 239, 231,
 function TargAudio(){
   const A=this;let ctx=null,node=null,on=true;const RB=new Float32Array(32768);let wr=0,rd=0;
   let s0=0x10,s1=0,u2a=0,mus=0,toneP=0,spec=false,specE=0,specP=0,specM=0,lastShoot=-1,tick=0,acc=0,hpX=0,hpY=0,mLP=0,tLP=0,sr=48000;
+  A.quiet=false; // while true the game's own beeper (coin / bonus-screen tune) is silenced so a recorded sound can replace it
   A.hold=false; // while true (Hyperspace / fanfare freeze) the game's own music & siren are silenced
   const voices=[];const DL=new Float32Array(16384);let dw=0;
   const TAU=Math.PI*2,nz=()=>Math.random()*2-1,mtof=n=>440*Math.pow(2,(n-69)/12);
@@ -249,7 +286,7 @@ function TargAudio(){
   // recorded sound files (decoded once audio is unlocked; resampled to the device rate by the browser)
   const S={};let specMute=0;
   const decode=k=>{const s=S[k];if(!ctx||!s||!s.ab||s.busy)return;s.busy=true;
-    const ok=b=>{s.data=b.getChannelData(0);s.ab=null;},bad=()=>{s.failed=true;s.ab=null;};
+    const ok=b=>{const d=new Float32Array(b.length),nc=b.numberOfChannels;for(let c=0;c<nc;c++){const ch=b.getChannelData(c);for(let i=0;i<d.length;i++)d[i]+=ch[i]/nc;}s.data=d;s.ab=null;},bad=()=>{s.failed=true;s.ab=null;};
     try{const r=ctx.decodeAudioData(s.ab.slice(0),ok,bad);if(r&&r.catch)r.catch(bad);}catch(e){bad();}};
   A.load=(k,url,gain)=>{S[k]={gain};return fetch(url).then(r=>r.arrayBuffer()).then(ab=>{S[k].ab=ab;decode(k);}).catch(()=>{S[k].failed=true;});};
   // try a list of possible file names (first one that exists wins); stays on the synthesized fallback if none do
@@ -287,7 +324,7 @@ function TargAudio(){
     const buffered=(wr-rd+32768)&32767; if(buffered>sr*0.25){for(const e of ev)w(e[1],e[2],tick/sr);return;} let ei=0;
     for(let k=0;k<n;k++){const c=k*cyc/n; while(ei<ev.length&&ev[ei][0]<=c){w(ev[ei][1],ev[ei][2],tick/sr);ei++;}
       tick++; let x=0,fx=0,cl=0;
-      if(!A.hold){
+      if(!A.hold&&!A.quiet){
         // game music: 1-bit line + tone generator, softened through low-pass filters into a mellow synth tone
         mLP+=(((mus?1:-1)*0.14)-mLP)*0.08; x+=mLP;
         if((s0&0x80)&&(s1&1)){const div=256-TONEPROM[((s1&2)<<3)|u2a];const f=9938/div/2;toneP=(toneP+f/sr)%1;
@@ -314,11 +351,14 @@ const get=async n=>Uint8Array.from(atob(ROMS[n]),c=>c.charCodeAt(0));
 const prog=new Uint8Array(0x2800);
 const parts=[['hrl_10a1.10a',0],['hrl_9a1.9a',0x800],['hrl_8a1.8a',0x1000],['hrl_7a4.7a',0x1800],['hrl_6a3.6a',0x2000]];
 for(const [n,o] of parts)prog.set(await get(n),o);
+// Enemy value: the game keeps it in $C3 as a decimal count of tens (1 = 10 points) and adds one per cleared screen,
+// but stops at 9 (90 points). Its limit check (CMP #$09 at $1D10) is raised to $99, so it carries on 100, 110, 120 ...
+if(prog[0x1D10-0x1800]===0xC9&&prog[0x1D11-0x1800]===0x09)prog[0x1D11-0x1800]=0x99;
 const m=new TargMachine({prog,sprites:await get('hrl_11d-1.11d')});m.reset();window.m=m;
 const au=new TargAudio();window.au=au;
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',names('Skid','skid'),0.75);au.loadAny('crash',names('Crash','crash'),0.85);au.loadAny('fanfare',['sounds/Targ_Fanfare.m4a',...names('Targ_Fanfare','Fanfare')],1.5);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',names('Crash','crash'),0.85);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen.m4a',0.85);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -432,16 +472,17 @@ function clearCheck(){
   if(started&&boardUp()&&prevB1===1&&b===0&&!fanfareIn){fanfareIn=24;spectarHeard=false;} // let the last explosion show first
   prevB1=b;
   if(fanfareIn&&--fanfareIn===0){frozen={type:'fan',f:0,dur:FAN_DUR,parts:[],arm:false,skip:false};au.hold=true;
-    frozen.snd=[au.sample('fanfare','fanfare'),au.sample('fireworks')];fwStart();
-    frozen.rep=Math.round((au.dur('fanfare')||2.7)*60);} // frame at which the brass phrase is played a second time // recorded brass fanfare + fireworks booms/crackle
+    frozen.snd=[au.sample('fanfare','fanfare'),au.sample('fireworks')];fwStart(); // recorded trumpet fanfare (once) + fireworks booms/crackle
+    for(const v of freeVs)v.amp=FREE_DUCK;} // any extra-car sound still ringing is turned down so the fanfare leads
 }
 function fanEnd(){frozen=null;au.hold=false;fwStop();}
 
-// ---------- fireworks: two video clips played side by side over the board during the fanfare ----------
+// ---------- fireworks: three video clips (upper left, lower right, lower left) played together over the board during the fanfare ----------
 // The clips have a black background. Each frame is copied to a small canvas and every pixel's brightness becomes its
 // opacity (black -> fully transparent), so only the sparks are drawn over the game. x/y/w/h are in board pixels (240x256).
-const FAN_DUR=405,FAN_FADE=36; // 6.75 s celebration (the brass phrase twice), fading out over the last 0.6 s
-const FW=[{url:'video/fireworks1.mp4',x:-14,y:2,w:208,h:156},{url:'video/fireworks2.mp4',x:72,y:90,w:178,h:178}];
+const FAN_DUR=405,FAN_FADE=36; // 6.75 s celebration, fading out over the last 0.6 s
+const FW=[{url:'video/fireworks1.mp4',x:-14,y:2,w:208,h:156},{url:'video/fireworks2.mp4',x:78,y:84,w:174,h:174},
+  {url:'video/fireworks3.mp4',x:-26,y:122,w:150,h:150}];
 for(const o of FW){const v=document.createElement('video');v.muted=true;v.defaultMuted=true;v.playsInline=true;
   v.setAttribute('muted','');v.setAttribute('playsinline','');v.setAttribute('webkit-playsinline','');v.preload='auto';
   v.style.cssText='position:absolute;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none';document.body.appendChild(v);o.v=v;
@@ -546,6 +587,7 @@ function updHyperUI(){const ready=cd===0;hyBtn.classList.toggle('ready',ready&&s
 // Score: BCD bytes $BC (top two digits) and $BD (next two) - the last two shown digits are always 00.
 // $C1 = cars left for the player in play (also drawn as the car icons at row 1, columns 10+).
 const BONUS=1500;let prevScore=0;
+const FREE_DUCK=0.22;let freeVs=[]; // extra-car sound: full volume in play, this fraction while the screen-clear fanfare plays
 const bcd=v=>(v>>4)*10+(v&15),score=()=>(bcd(m.ram[0xbc])*100+bcd(m.ram[0xbd]))*100;
 function bonusCheck(){
   const sc=score();
@@ -553,7 +595,7 @@ function bonusCheck(){
   if(started&&boardUp()&&sc>prevScore&&sc-prevScore<=1000&&Math.floor(sc/BONUS)>Math.floor(prevScore/BONUS)){
     const n=Math.min(m.ram[0xc1]+1,9);m.ram[0xc1]=n;
     for(let i=0;i<6;i++)m.vram[32+10+i]=i<n?0x64:0x20; // refresh the car icons right away
-    au.sample('freeman','fanfare');}
+    const v=au.sample('freeman','fanfare');if(v&&'amp' in v){if(fanfareIn)v.amp=FREE_DUCK;freeVs.push(v);if(freeVs.length>8)freeVs.shift();}}
   prevScore=sc;
 }
 // ---------- Spectar (cyan bonus target, tiles $C8-$DF) emerging ----------
@@ -584,14 +626,49 @@ function skidCheck(){
   skidding=rev;
 }
 
+// ---------- coin: recorded coin-drop instead of the game's beep ----------
+let prevCoin=0,coinMute=0;
+function coinCheck(){
+  if(I.coin&&!prevCoin)au.sample('coin');
+  if(I.coin)coinMute=30;else if(coinMute>0)coinMute--; // the game's own coin beep stays silent until 0.5 s after the button is let go
+  prevCoin=I.coin;
+}
+// ---------- "Intruder alert": once per new game, when the board first appears after START ----------
+let introArmed=false,prevStart=0;
+function introCheck(){
+  const st=I.start1||I.start2,inGame=boardUp()&&m.ram[0xc1]>0;
+  if(st&&!prevStart&&!inGame)introArmed=true; // START pressed while no game is running
+  prevStart=st;
+  if(introArmed&&inGame&&alive()){introArmed=false;au.sample('intruder');}
+}
+// ---------- bonus screen (EXTRA POINTS / BONUS, shown by the game after each cleared screen) ----------
+// The recorded bonus sound replaces the game's own tune there. The game only shows the screen for about 2.2 s,
+// so it is held still until the sound has nearly played out (FIRE, pressed afresh, moves on at once).
+// The screen also shows the new enemy value; the game can only print one digit of it, so from 100 points up
+// the two digits are written here.
+const BONUS_GAME_FRAMES=130;let bonusUp=false,bonusV=null,bonusHoldIn=0;
+const bonusScreen=()=>!boardUp()&&m.vram[10*32+11]===0x45&&m.vram[10*32+12]===0x58&&m.vram[16*32+14]===0x42&&m.vram[16*32+15]===0x4f;
+function bonusScreenCheck(){
+  const up=bonusScreen();
+  if(up&&!bonusUp&&started){bonusV=au.sample('bonus');const d=au.dur('bonus');
+    if(bonusV&&d>0){bonusHoldIn=12;bonusUp=true;bonusLen=Math.max(0,Math.round(d*60)-BONUS_GAME_FRAMES);}}
+  if(up){const v=m.ram[0xc3];if(v>=0x10&&m.vram[19*32+14]===0x30){m.vram[19*32+12]=0x30|(v>>4);m.vram[19*32+13]=0x30|(v&15);}}
+  if(up&&bonusHoldIn&&--bonusHoldIn===0&&bonusLen>0)frozen={type:'hold',f:0,dur:bonusLen,arm:false};
+  if(!up)bonusV=null;
+  bonusUp=up;au.quiet=(up&&!!bonusV)||coinMute>0;
+}
+let bonusLen=0;
+
 // ---------- main loop ----------
 let paused=false,last=performance.now(),acc=0;
 function step(){
   if(cd>0)cd--;
-  if(frozen){au.frame([],FCYC);if(frozen.type==='hyper')hyperTick(frozen);else{const z=frozen; // FIRE (pressed afresh, after the first 1.5 s) cuts the celebration short
+  if(frozen){au.frame([],FCYC);if(frozen.type==='hyper')hyperTick(frozen);
+    else if(frozen.type==='hold'){const z=frozen;if(!m.inp.fire)z.arm=true; // bonus screen held for its sound
+      if(z.arm&&m.inp.fire&&z.f>20){au.stop(bonusV);frozen=null;}else if(++z.f>=z.dur)frozen=null;}
+    else{const z=frozen; // FIRE (pressed afresh, after the first 1.5 s) cuts the celebration short
       if(!m.inp.fire)z.arm=true;
       if(z.arm&&m.inp.fire&&!z.skip&&z.f>90&&z.f<z.dur-FAN_FADE){z.skip=true;z.f=z.dur-FAN_FADE;z.snd.forEach(au.stop);}
-      if(!z.skip&&z.f===z.rep)z.snd.push(au.sample('fanfare','fanfare')); // brass phrase again, back to back
       if(++z.f>=z.dur)fanEnd();}return;}
   const wasAlive=alive();f0=m.cpu.cycles;m.frame();
   frameNo++;
@@ -599,7 +676,7 @@ function step(){
     const last=m.ram[0xc1]===1;if(last)finalCrash=frameNo;au.playerDeath(last);}
   au.frame(sev,FCYC);sev.length=0;
   if(ghostStep()===2)au.play('shoot');turnStep();skidCheck();
-  clearCheck();bonusCheck();spectarCheck();gameOverCheck();
+  clearCheck();bonusCheck();spectarCheck();gameOverCheck();coinCheck();introCheck();bonusScreenCheck();
 }
 function loop(t){acc+=Math.min(100,t-last);last=t;
   if(!paused)while(acc>=1000/60){step();acc-=1000/60;} else acc=0;
