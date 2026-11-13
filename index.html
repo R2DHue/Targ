@@ -234,6 +234,9 @@ const TONEPROM=[229, 229, 237, 237, 229, 229, 237, 237, 231, 231, 239, 239, 231,
 function TargAudio(){
   const A=this;let ctx=null,node=null,on=true;const RB=new Float32Array(32768);let wr=0,rd=0;
   let s0=0x10,s1=0,u2a=0,mus=0,toneP=0,spec=false,specE=0,specP=0,specM=0,lastShoot=-1,tick=0,acc=0,hpX=0,hpY=0,mLP=0,tLP=0,sr=48000;
+  A.DUCK=0.6; // level of all other game sound while the alarm / "Intruder alert" announcement plays (1 = no change)
+  let duck=1;
+  A.pri=k=>{const v=A.sample(k);if(v)v.pri=true;return v;}; // a recorded sound the rest of the mix makes room for
   A.quiet=false; // while true the game's own beeper (coin / bonus-screen tune) is silenced so a recorded sound can replace it
   A.hold=false; // while true (Hyperspace / fanfare freeze) the game's own music & siren are silenced
   const voices=[];const DL=new Float32Array(16384);let dw=0;
@@ -323,7 +326,7 @@ function TargAudio(){
   A.frame=(ev,cyc)=>{ if(!ctx)return; acc+=sr/60; const n=Math.floor(acc); acc-=n;
     const buffered=(wr-rd+32768)&32767; if(buffered>sr*0.25){for(const e of ev)w(e[1],e[2],tick/sr);return;} let ei=0;
     for(let k=0;k<n;k++){const c=k*cyc/n; while(ei<ev.length&&ev[ei][0]<=c){w(ev[ei][1],ev[ei][2],tick/sr);ei++;}
-      tick++; let x=0,fx=0,cl=0;
+      tick++; let x=0,fx=0,cl=0,pr=0,prOn=false;
       if(!A.hold&&!A.quiet){
         // game music: 1-bit line + tone generator, softened through low-pass filters into a mellow synth tone
         mLP+=(((mus?1:-1)*0.14)-mLP)*0.08; x+=mLP;
@@ -336,10 +339,11 @@ function TargAudio(){
       if(specE>0.001){const st=tick/sr;const step=[1,1.26,1.5,2][Math.floor(st*10)%4];const f=523*step;
         specM+=f*2/sr;specP+=f/sr;const gate=0.5+0.5*Math.cos(TAU*((st*10)%1));
         fx+=Math.sin(TAU*specP+1.2*Math.sin(TAU*specM))*gate*specE*0.09;}
-      for(let i=voices.length-1;i>=0;i--){const vo=voices[i];const s=vo.f(vo.t);vo.t+=1/sr;if(s===null){voices.splice(i,1);continue;}if(vo.clean)cl+=s;else fx+=s*vo.dry;}
+      for(let i=voices.length-1;i>=0;i--){const vo=voices[i];const s=vo.f(vo.t);vo.t+=1/sr;if(s===null){voices.splice(i,1);continue;}if(vo.pri){pr+=s;prOn=true;}else if(vo.clean)cl+=s;else fx+=s*vo.dry;}
       // short stereo-less echo for a modern "space" feel on effects
       const di=(dw-Math.floor(sr*0.15)+16384)&16383;const echo=DL[di];DL[dw]=fx+echo*0.32;dw=(dw+1)&16383;
-      x+=fx+echo*0.28+cl;
+      duck+=((prOn?A.DUCK:1)-duck)*0.003; // eases down in about 10 ms, back up the same way
+      x=(x+fx+echo*0.28+cl)*duck+pr;
       hpY=0.995*(hpY+x-hpX);hpX=x; RB[wr]=Math.tanh(hpY*1.15);wr=(wr+1)&32767;}
   };
 }
@@ -358,7 +362,7 @@ const m=new TargMachine({prog,sprites:await get('hrl_11d-1.11d')});m.reset();win
 const au=new TargAudio();window.au=au;
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',names('Crash','crash'),0.85);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen.m4a',0.85);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',names('Crash','crash'),0.85);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen.m4a',0.85);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -633,17 +637,19 @@ function coinCheck(){
   if(I.coin)coinMute=30;else if(coinMute>0)coinMute--; // the game's own coin beep stays silent until 0.5 s after the button is let go
   prevCoin=I.coin;
 }
-// ---------- "Intruder alert": once per new game, when the board first appears after START ----------
-let introArmed=false,prevStart=0;
+// ---------- alarm, then "Intruder alert": once per new game, when the board first appears after START ----------
+// The other game sounds are turned down slightly (au.DUCK) while the two play.
+let introArmed=false,prevStart=0,introIn=0;
 function introCheck(){
   const st=I.start1||I.start2,inGame=boardUp()&&m.ram[0xc1]>0;
   if(st&&!prevStart&&!inGame)introArmed=true; // START pressed while no game is running
   prevStart=st;
-  if(introArmed&&inGame&&alive()){introArmed=false;au.sample('intruder');}
+  if(introArmed&&inGame&&alive()){introArmed=false;const v=au.pri('alarm');introIn=v?Math.max(1,Math.round(au.dur('alarm')*60)):1;} // alarm ...
+  if(introIn&&--introIn===0)au.pri('intruder'); // ... then the announcement as soon as the alarm ends
 }
 // ---------- bonus screen (EXTRA POINTS / BONUS, shown by the game after each cleared screen) ----------
 // The recorded bonus sound replaces the game's own tune there. The game only shows the screen for about 2.2 s,
-// so it is held still until the sound has nearly played out (FIRE, pressed afresh, moves on at once).
+// so it is held still until the sound has nearly played out.
 // The screen also shows the new enemy value; the game can only print one digit of it, so from 100 points up
 // the two digits are written here.
 const BONUS_GAME_FRAMES=130;let bonusUp=false,bonusV=null,bonusHoldIn=0;
@@ -664,11 +670,8 @@ let paused=false,last=performance.now(),acc=0;
 function step(){
   if(cd>0)cd--;
   if(frozen){au.frame([],FCYC);if(frozen.type==='hyper')hyperTick(frozen);
-    else if(frozen.type==='hold'){const z=frozen;if(!m.inp.fire)z.arm=true; // bonus screen held for its sound
-      if(z.arm&&m.inp.fire&&z.f>20){au.stop(bonusV);frozen=null;}else if(++z.f>=z.dur)frozen=null;}
-    else{const z=frozen; // FIRE (pressed afresh, after the first 1.5 s) cuts the celebration short
-      if(!m.inp.fire)z.arm=true;
-      if(z.arm&&m.inp.fire&&!z.skip&&z.f>90&&z.f<z.dur-FAN_FADE){z.skip=true;z.f=z.dur-FAN_FADE;z.snd.forEach(au.stop);}
+    else if(frozen.type==='hold'){if(++frozen.f>=frozen.dur)frozen=null;} // bonus screen held for its sound (no button skips it)
+    else{const z=frozen; // screen-clear celebration: always plays in full, FIRE does not cut it short
       if(++z.f>=z.dur)fanEnd();}return;}
   const wasAlive=alive();f0=m.cpu.cycles;m.frame();
   frameNo++;
