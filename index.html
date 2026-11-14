@@ -212,8 +212,8 @@ function TargMachine(roms){ // roms: {prog: Uint8Array(0x2800) for 0x1800-0x3fff
   m.render=(img)=>{ // img: Uint32Array 256*256 ABGR
     const pal=m.palette.map(([r,g,b])=>0xff000000|(b<<16)|(g<<8)|r);
     for(let ty=0;ty<32;ty++)for(let tx=0;tx<32;tx++){
-      const code=vram[ty*32+tx], col=pal[6-(code>>6)], bg=pal[7];
-      for(let r=0;r<8;r++){const bits=cram[code*8+r];let o=(ty*8+r)*256+tx*8;
+      const code=vram[ty*32+tx], col=pal[6-(code>>6)], bg=pal[7], blank=m.hiEnemies&&code<0x20;
+      for(let r=0;r<8;r++){const bits=blank?0:cram[code*8+r];let o=(ty*8+r)*256+tx*8;
         for(let b=0;b<8;b++)img[o+b]=(bits&(0x80>>b))?col:bg;}
     }
     const drawS=(code,xp,yp,c)=>{const sx=236-xp-4, sy=244-yp-4;
@@ -367,7 +367,7 @@ m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
 const cv=document.getElementById('c'),ctx=cv.getContext('2d'),id=ctx.createImageData(256,256),buf=new Uint32Array(id.data.buffer);
-const fxc=document.getElementById('fx'),fx=fxc.getContext('2d');const FXS=3;
+const fxc=document.getElementById('fx'),fx=fxc.getContext('2d');let FXS=3; // overlay pixels per game pixel (follows the screen, see fitFx)
 msg.textContent='Tap to start';msg.onclick=()=>msg.remove();setTimeout(()=>msg.remove(),100);
 
 // ---------- game-state helpers (addresses found by tracing the Targ program) ----------
@@ -375,7 +375,7 @@ msg.textContent='Tap to start';msg.onclick=()=>msg.remove();setTimeout(()=>msg.r
 // Tile under a game coordinate: col=((255-x)>>3)-2, row=((255-y)>>3)-1. Lanes: rows 3,6..30 and cols 2,5..29.
 const boardUp=()=>m.vram[2*32+5]===0x60;
 const alive=()=>boardUp()&&(m.mol&15)<8;
-const isEnemy=t=>t>=0x08&&t<0x20;
+const isEnemy=t=>t<0x20; // $00-$07 moving up, $08-$0F down, $10-$17 right, $18-$1F left
 const scr=(x,y)=>[228-x,244-y]; // game coords -> centre of sprite on the 240x256 canvas
 let started=false;
 
@@ -546,8 +546,47 @@ function rippleWarp(src,dst,f){
 
 // ---------- effects layer ----------
 const P=[];
+// ---------- deluxe enemies ----------
+// The game draws each enemy as a pair of neighbouring 8x8 characters: one arrow shape per direction, in four
+// versions shifted 2 pixels at a time and split across the two cells (32 characters, $00-$1F). From a cell's
+// character code its direction and exact pixel position follow, so the artwork in enemy.png (drawn pointing down,
+// turned to face the direction of travel) is painted over exactly the same 8x8 pixels at full screen resolution,
+// and the blocky characters themselves are left blank. If enemy.png is missing, or the game ever loads different
+// shapes into those characters, the original blocky enemies are shown instead.
+const ENEMY_SIG=[[0x08,[0xC3,0xE7,0x7E,0x7E,0x3C,0x3C,0x18,0x18]],[0x10,[0xC0,0xF0,0x7C,0x3F,0x3F,0x7C,0xF0,0xC0]]];
+const ENEMY_EMPTY={0x00:1,0x09:1,0x11:1,0x18:1}; // the cell of a pair that is empty when the enemy sits squarely in the other
+const enemyImg=new Image();let enemySpr=null,enemyOK=false;enemyImg.onload=()=>{enemyOK=true;enemySpr=null;};enemyImg.src='enemy.png';
+function buildEnemySprites(){ // four copies (up, down, right, left) at exactly 8 game pixels = 8*FXS screen pixels
+  const S=8*FXS;let src=enemyImg,w=enemyImg.naturalWidth;
+  while(w>=S*2){const h=document.createElement('canvas');h.width=h.height=w>>1;const g=h.getContext('2d');g.imageSmoothingEnabled=true;g.drawImage(src,0,0,w>>1,w>>1);src=h;w>>=1;} // halve step by step for a clean reduction
+  enemySpr=[Math.PI,0,-Math.PI/2,Math.PI/2].map(a=>{const c=document.createElement('canvas');c.width=c.height=S;const g=c.getContext('2d');
+    g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.translate(S/2,S/2);g.rotate(a);g.drawImage(src,-S/2,-S/2,S,S);return c;});
+}
+let fitTick=0;
+function fitFx(){ // keep the overlay at (about) one canvas pixel per real screen pixel, so the artwork is as sharp as the display allows
+  const want=Math.max(3,Math.min(6,Math.ceil(fxc.getBoundingClientRect().width*(window.devicePixelRatio||1)/240-0.02)));
+  if(want!==FXS||fxc.width!==240*want){FXS=want;fxc.width=240*FXS;fxc.height=256*FXS;enemySpr=null;}
+}
+function enemiesReady(){
+  if(!enemyOK)return false;
+  for(const [code,g] of ENEMY_SIG)for(let r=0;r<8;r++)if(m.cram[code*8+r]!==g[r])return false;
+  if(!enemySpr)buildEnemySprites();
+  return true;
+}
+function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
+  const v=m.vram,seen=new Set();
+  for(let i=0;i<1024;i++){const t=v[i];if(t>=0x20||ENEMY_EMPTY[t])continue;
+    const r=i>>5,c=i&31,d=t>>3,k=(t>>1)&3,odd=t&1;let x=c*8,y=r*8;
+    if(d===1)y=(r-odd)*8+2*k;else if(d===0)y=(r-odd)*8+8-2*k;else if(d===2)x=(c-odd)*8+2*k;else x=(c-odd)*8+8-2*k;
+    const key=d|(x<<2)|(y<<13);if(seen.has(key))continue;seen.add(key); // both cells of a pair give the same position: draw once
+    fx.drawImage(enemySpr[d],(x-8)*FXS,y*FXS);} // the picture is shown 8 pixels to the left of its buffer (see putImageData below)
+}
+
 function drawFx(){
-  fx.setTransform(1,0,0,1,0,0);fx.clearRect(0,0,fxc.width,fxc.height);fx.setTransform(FXS,0,0,FXS,0,0);
+  if((fitTick++&31)===0)fitFx();
+  fx.setTransform(1,0,0,1,0,0);fx.clearRect(0,0,fxc.width,fxc.height);
+  if(m.hiEnemies)drawEnemies();
+  fx.setTransform(FXS,0,0,FXS,0,0);
   if(!frozen)return;const z=frozen;
   if(z.type==='hyper'){
     fx.globalCompositeOperation='lighter';
@@ -684,6 +723,7 @@ function step(){
 function loop(t){acc+=Math.min(100,t-last);last=t;
   if(!paused)while(acc>=1000/60){step();acc-=1000/60;} else acc=0;
   m.extra=ghosts.map(g=>[mCode[g.dx?'h':'v']??g.code,g.x,g.y]);
+  m.hiEnemies=enemiesReady();
   m.render(buf);if(frozen&&frozen.type==='hyper'){rippleWarp(buf,wbuf,frozen.f);ctx.putImageData(wid,-8,0);}else ctx.putImageData(id,-8,0);drawFx();updHyperUI();requestAnimationFrame(loop);}
 requestAnimationFrame(loop);
 const I=m.inp;
