@@ -222,7 +222,7 @@ function TargMachine(roms){ // roms: {prog: Uint8Array(0x2800) for 0x1800-0x3fff
         for(let b=0;b<8;b++){const x=sx+half*8+b; if(x<0||x>255)continue; if(bits&(0x80>>b))img[y*256+x]=c;}}};
     drawS((m.mol>>4)|((m.cpl&0x40)?16:0),m.s2x,m.s2y,pal[1]);
     if(m.extra)for(const [c,x,y] of m.extra)drawS(c,x,y,pal[1]);
-    if(!m.hideP)drawS((m.mol&15)|((m.cpl&0x20)?16:0),m.s1x,m.s1y,pal[0]);
+    {const pc=(m.mol&15)|((m.cpl&0x20)?16:0);if(!m.hideP&&!(m.hiCar&&pc<4))drawS(pc,m.s1x,m.s1y,pal[0]);}
   };
 }
 if(typeof module!=='undefined')module.exports=TargMachine;
@@ -578,7 +578,7 @@ function buildEnemySprites(){ // four copies (up, down, right, left) at exactly 
 let fitTick=0;
 function fitFx(){ // keep the overlay at (about) one canvas pixel per real screen pixel, so the artwork is as sharp as the display allows
   const want=Math.max(3,Math.min(6,Math.ceil(fxc.getBoundingClientRect().width*(window.devicePixelRatio||1)/240-0.02)));
-  if(want!==FXS||fxc.width!==240*want){FXS=want;fxc.width=240*FXS;fxc.height=256*FXS;enemySpr=null;}
+  if(want!==FXS||fxc.width!==240*want){FXS=want;fxc.width=240*FXS;fxc.height=256*FXS;enemySpr=null;carSpr=null;}
 }
 function enemiesReady(){
   if(!enemyOK)return false;
@@ -587,6 +587,7 @@ function enemiesReady(){
   return true;
 }
 function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
+  if(!enemySpr)buildEnemySprites(); // the overlay's resolution has just changed: make them again at the new size
   const v=m.vram,seen=new Set();
   for(let i=0;i<1024;i++){const t=v[i];if(t>=0x20||ENEMY_EMPTY[t])continue;
     const r=i>>5,c=i&31,d=t>>3,k=(t>>1)&3,odd=t&1;let x=c*8,y=r*8;
@@ -595,10 +596,42 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
     fx.drawImage(enemySpr[d],(x-8)*FXS,y*FXS);} // the picture is shown 8 pixels to the left of its buffer (see putImageData below)
 }
 
+// ---------- animated player car ----------
+// Display only: the game still decides where the car is, which way it faces and what it hits. Its video hardware
+// is told three things about the car - X, Y and a picture number (0 up, 1 down, 2 right, 3 left; 8 and up are the
+// explosion). When the number is 0-3 the blocky 8x8 picture is skipped and a frame of car.png is painted over the
+// very same 8x8 pixels, turned to face the same way. Explosions keep the original pictures.
+// car.png is a strip of square frames side by side (as many as its width divided by its height), each showing the
+// car from above with its FRONT TO THE RIGHT and the artwork reaching the edges of its square.
+const CAR_FRAME_MS=100;       // how long each frame is shown, in milliseconds: 100 = 10 frames a second, the speed of the original GIF
+const CAR_ART_FACES=0;        // which way the artwork's front points: 0 right, 1 down, 2 left, 3 up
+const carImg=new Image();let carOK=false,carN=0,carSpr=null,carT=0,carLast=0;
+carImg.onload=()=>{const w=carImg.naturalWidth,h=carImg.naturalHeight;if(!w||!h)return;carN=Math.max(1,Math.round(w/h));carOK=true;carSpr=null;};
+carImg.src='car.png';
+function buildCarSprites(){ // [direction][frame] at exactly 8 game pixels = 8*FXS screen pixels
+  const S=8*FXS,fh=carImg.naturalHeight,fw=carImg.naturalWidth/carN,frames=[];
+  for(let i=0;i<carN;i++){let c=document.createElement('canvas');c.width=c.height=fh;let g=c.getContext('2d');g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
+    g.drawImage(carImg,i*fw,0,fw,fh,0,0,fh,fh);let w=fh;
+    while(w>=S*2){const h2=document.createElement('canvas');h2.width=h2.height=w>>1;const g2=h2.getContext('2d');g2.imageSmoothingEnabled=true;g2.drawImage(c,0,0,w>>1,w>>1);c=h2;w>>=1;} // halve step by step for a clean reduction
+    frames.push(c);}
+  // picture number -> quarter turns clockwise from "facing right": up = 3, down = 1, right = 0, left = 2
+  carSpr=[3,1,0,2].map(q=>frames.map(f=>{const c=document.createElement('canvas');c.width=c.height=S;const g=c.getContext('2d');
+    g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.translate(S/2,S/2);g.rotate((q-CAR_ART_FACES)*Math.PI/2);g.drawImage(f,-S/2,-S/2,S,S);return c;}));
+}
+function carReady(){if(!carOK)return false;if(!carSpr)buildCarSprites();return true;}
+function drawCar(){ // called with the overlay at 1:1 canvas pixels
+  const pc=(m.mol&15)|((m.cpl&0x20)?16:0);if(m.hideP||pc>=4)return;
+  if(!carSpr)buildCarSprites(); // the overlay's resolution has just changed: make them again at the new size
+  // same place the blocky picture goes: the hardware position counts from the right and from the bottom
+  fx.drawImage(carSpr[pc][((carT/CAR_FRAME_MS)|0)%carN],(224-m.s1x)*FXS,(240-m.s1y)*FXS);
+}
+
 function drawFx(){
   if((fitTick++&31)===0)fitFx();
+  {const now=performance.now();if(!paused)carT+=Math.min(100,now-carLast);carLast=now;} // animation clock: real time, so it runs at the same speed on 60 Hz and 120 Hz screens, and stops while paused
   fx.setTransform(1,0,0,1,0,0);fx.clearRect(0,0,fxc.width,fxc.height);
   if(m.hiEnemies)drawEnemies();
+  if(m.hiCar)drawCar();
   fx.setTransform(FXS,0,0,FXS,0,0);
   if(!frozen)return;const z=frozen;
   if(z.type==='hyper'){
@@ -736,8 +769,10 @@ function step(){
 function loop(t){acc+=Math.min(100,t-last);last=t;
   if(!paused)while(acc>=1000/60){step();acc-=1000/60;} else acc=0;
   m.extra=ghosts.map(g=>[mCode[g.dx?'h':'v']??g.code,g.x,g.y]);
-  m.hiEnemies=enemiesReady();
-  m.render(buf);if(frozen&&frozen.type==='hyper'){rippleWarp(buf,wbuf,frozen.f);ctx.putImageData(wid,-8,0);}else ctx.putImageData(id,-8,0);drawFx();updHyperUI();requestAnimationFrame(loop);}
+  m.hiEnemies=enemiesReady();m.hiCar=carReady();
+  m.render(buf);if(frozen&&frozen.type==='hyper'){rippleWarp(buf,wbuf,frozen.f);ctx.putImageData(wid,-8,0);}else ctx.putImageData(id,-8,0);
+  try{drawFx();}catch(e){console.error(e);} // a fault while painting the overlay must never stop the game itself
+  updHyperUI();requestAnimationFrame(loop);}
 requestAnimationFrame(loop);
 const I=m.inp;
 
