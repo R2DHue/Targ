@@ -555,9 +555,22 @@ const P=[];
 // shapes into those characters, the original blocky enemies are shown instead.
 const ENEMY_SIG=[[0x08,[0xC3,0xE7,0x7E,0x7E,0x3C,0x3C,0x18,0x18]],[0x10,[0xC0,0xF0,0x7C,0x3F,0x3F,0x7C,0xF0,0xC0]]];
 const ENEMY_EMPTY={0x00:1,0x09:1,0x11:1,0x18:1}; // the cell of a pair that is empty when the enemy sits squarely in the other
-const enemyImg=new Image();let enemySpr=null,enemyOK=false;enemyImg.onload=()=>{enemyOK=true;enemySpr=null;};enemyImg.src='enemy.png';
+// enemy.png can be any PNG with a transparent background, drawn pointing down, at any size: the empty margin around
+// the artwork is trimmed off here and what is left is stretched to the enemy's 8x8 square.
+const enemyImg=new Image();let enemySpr=null,enemyOK=false,enemySrc=null;
+enemyImg.onload=()=>{const W=enemyImg.naturalWidth,H=enemyImg.naturalHeight;if(!W||!H)return;
+  enemySrc=document.createElement('canvas');enemySrc.width=enemySrc.height=512;const g=enemySrc.getContext('2d');g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
+  try{const k=Math.min(1,1024/Math.max(W,H)),w=Math.max(1,Math.round(W*k)),h=Math.max(1,Math.round(H*k));
+    const t=document.createElement('canvas');t.width=w;t.height=h;const tg=t.getContext('2d',{willReadFrequently:true});tg.drawImage(enemyImg,0,0,w,h);
+    const d=tg.getImageData(0,0,w,h).data;let x0=w,x1=-1,y0=h,y1=-1;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(d[(y*w+x)*4+3]>24){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+    if(x1<0)return; // completely transparent picture: keep the blocky enemies
+    g.drawImage(enemyImg,x0/k,y0/k,(x1-x0+1)/k,(y1-y0+1)/k,0,0,512,512);
+  }catch(e){g.drawImage(enemyImg,0,0,512,512);}
+  enemyOK=true;enemySpr=null;};
+enemyImg.src='enemy.png';
 function buildEnemySprites(){ // four copies (up, down, right, left) at exactly 8 game pixels = 8*FXS screen pixels
-  const S=8*FXS;let src=enemyImg,w=enemyImg.naturalWidth;
+  const S=8*FXS;let src=enemySrc,w=512;
   while(w>=S*2){const h=document.createElement('canvas');h.width=h.height=w>>1;const g=h.getContext('2d');g.imageSmoothingEnabled=true;g.drawImage(src,0,0,w>>1,w>>1);src=h;w>>=1;} // halve step by step for a clean reduction
   enemySpr=[Math.PI,0,-Math.PI/2,Math.PI/2].map(a=>{const c=document.createElement('canvas');c.width=c.height=S;const g=c.getContext('2d');
     g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.translate(S/2,S/2);g.rotate(a);g.drawImage(src,-S/2,-S/2,S,S);return c;});
