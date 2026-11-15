@@ -672,20 +672,33 @@ function drawFx(){
 function updHyperUI(){const ready=cd===0;hyBtn.classList.toggle('ready',ready&&started);
   hyBtn.style.setProperty('--p',((CD_FRAMES-cd)/CD_FRAMES*360).toFixed(1)+'deg');hyT.textContent=ready?'HYPER':Math.ceil(cd/60)+'s';}
 
-// ---------- free car every 1,500 points ----------
-// Score: BCD bytes $BC (top two digits) and $BD (next two) - the last two shown digits are always 00.
-// $C1 = cars left for the player in play (also drawn as the car icons at row 1, columns 10+).
-const BONUS=1500;let prevScore=0;
-const FREE_DUCK=0.22;let freeVs=[]; // extra-car sound: full volume in play, this fraction while the screen-clear fanfare plays
-const bcd=v=>(v>>4)*10+(v&15),score=()=>(bcd(m.ram[0xbc])*100+bcd(m.ram[0xbd]))*100;
+// ---------- free cars: first at 1,500 points, each one after that costing 500 more than the last ----------
+// The game itself never awards cars for points; this rule is added here. It only READS the game's score and writes
+// the number of cars.
+// How the game keeps score: two bytes of binary-coded decimal for whoever is playing - $BD holds the hundreds and
+// tens digits, $BE the ten-thousands and thousands. The final 0 on screen is a fixed character that is never stored,
+// so the stored number is the score divided by 10. Kills are added to $BD (carrying into $BE); the bonus for clearing
+// a screen is added straight to $BE. $BF tells which player is up (1 = player 1, 2 = player 2; the game halves it to
+// get 0 or 1, as is done below); on a change of player the game swaps that player's score into $BD/$BE.
+// The score is the score: every point counts here, including the screen-clear bonus.
+const FREE_FIRST=1500;     // points needed for the first free car
+const FREE_STEP=500;       // each further car costs this much more than the one before:
+                           //   costs 1,500 / 2,000 / 2,500 / 3,000 ...  ->  cars at 1,500 / 3,500 / 6,000 / 9,000 / 12,500 / 16,500 ...
+const FREE_GROWING=true;   // false = a flat "every FREE_STEP points after the first" instead: cars at 1,500 / 2,000 / 2,500 / 3,000 ...
+const FREE_DUCK=0.22;let freeVs=[]; // extra-car sound: full volume in play, this fraction while the fanfare or the bonus-screen sound plays
+const bcd=v=>(v>>4)*10+(v&15),score=()=>(bcd(m.ram[0xbe])*100+bcd(m.ram[0xbd]))*10; // the score as shown on screen
+function freeGoal(k){return FREE_GROWING?FREE_FIRST*k+FREE_STEP*k*(k-1)/2:FREE_FIRST+FREE_STEP*(k-1);} // score at which car number k (1, 2, 3 ...) is won
+function freeReached(sc){let k=0;while(freeGoal(k+1)<=sc)k++;return k;}      // how many cars a score has earned in all
+const freeTally=[{prev:0,won:0},{prev:0,won:0}];                              // one running tally per player
 function bonusCheck(){
-  const sc=score();
-  // only count normal in-game scoring (small step up) - not score resets or player swaps
-  if(started&&boardUp()&&sc>prevScore&&sc-prevScore<=1000&&Math.floor(sc/BONUS)>Math.floor(prevScore/BONUS)){
-    const n=Math.min(m.ram[0xc1]+1,9);m.ram[0xc1]=n;
-    for(let i=0;i<6;i++)m.vram[32+10+i]=i<n?0x64:0x20; // refresh the car icons right away
-    const v=au.sample('freeman','fanfare');if(v&&'amp' in v){if(fanfareIn)v.amp=FREE_DUCK;freeVs.push(v);if(freeVs.length>8)freeVs.shift();}}
-  prevScore=sc;
+  const sc=score(),t=freeTally[(m.ram[0xbf]>>1)&1],inGame=started&&m.ram[0xc1]>0;
+  if(!inGame||sc<t.prev)t.won=freeReached(sc); // not playing, or the score went back down (a new game): start counting from here, award nothing
+  else{const due=freeReached(sc);
+    if(due>t.won){const add=due-t.won;t.won=due;
+      const n=Math.min(m.ram[0xc1]+add,9);m.ram[0xc1]=n; // the game holds at most 9 cars
+      if(boardUp())for(let i=0;i<6;i++)m.vram[32+10+i]=i<n?0x64:0x20; // refresh the car icons right away (on other screens the game redraws them itself)
+      const v=au.sample('freeman','fanfare');if(v&&'amp' in v){if(fanfareIn||bonusUp||(frozen&&frozen.type==='fan'))v.amp=FREE_DUCK;freeVs.push(v);if(freeVs.length>8)freeVs.shift();}}}
+  t.prev=sc;
 }
 // ---------- Spectar (cyan bonus target, tiles $C8-$DF) emerging ----------
 // The Spectar's sound plays only the first time he materializes on a screen (he keeps slipping in and out of the
