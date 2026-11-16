@@ -306,7 +306,7 @@ function TargAudio(){
   // the player's car was hit: play the Crash sound, and keep the game's own explosion/"enemy destroyed"
   // effects quiet while the car's death plays out (it is the player who died, not an enemy)
   // on the last car the Game Over sound replaces the Crash sound and rings on through the END OF GAME screen
-  let deathMute=0;A.playerDeath=last=>{deathMute=tick+Math.round(sr*(last?4:2.5));A.sample(last?'gameover':'crash',last?'gameover':'crash');};
+  let deathMute=0;A.playerDeath=last=>{deathMute=tick+Math.round(sr*(last?4:2.5));const v=A.sample(last?'gameover':'crash',last?'gameover':'crash');if(v&&!last){v.pri=true;v.solo=true;}}; // the crash plays alone: every other game sound is silent until it ends
   A.muteSpec=sec=>{specMute=tick+Math.round(sec*sr);};
   A.unlock=()=>{if(!ctx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return;ctx=new C();sr=ctx.sampleRate;
       node=ctx.createScriptProcessor(2048,0,1);node.onaudioprocess=e=>{const o=e.outputBuffer.getChannelData(0);
@@ -326,7 +326,7 @@ function TargAudio(){
   A.frame=(ev,cyc)=>{ if(!ctx)return; acc+=sr/60; const n=Math.floor(acc); acc-=n;
     const buffered=(wr-rd+32768)&32767; if(buffered>sr*0.25){for(const e of ev)w(e[1],e[2],tick/sr);return;} let ei=0;
     for(let k=0;k<n;k++){const c=k*cyc/n; while(ei<ev.length&&ev[ei][0]<=c){w(ev[ei][1],ev[ei][2],tick/sr);ei++;}
-      tick++; let x=0,fx=0,cl=0,pr=0,prOn=false;
+      tick++; let x=0,fx=0,cl=0,pr=0,prOn=false,soloOn=false;
       if(!A.hold&&!A.quiet){
         // game music: 1-bit line + tone generator, softened through low-pass filters into a mellow synth tone
         mLP+=(((mus?1:-1)*0.14)-mLP)*0.08; x+=mLP;
@@ -339,10 +339,10 @@ function TargAudio(){
       if(specE>0.001){const st=tick/sr;const step=[1,1.26,1.5,2][Math.floor(st*10)%4];const f=523*step;
         specM+=f*2/sr;specP+=f/sr;const gate=0.5+0.5*Math.cos(TAU*((st*10)%1));
         fx+=Math.sin(TAU*specP+1.2*Math.sin(TAU*specM))*gate*specE*0.09;}
-      for(let i=voices.length-1;i>=0;i--){const vo=voices[i];const s=vo.f(vo.t);vo.t+=1/sr;if(s===null){voices.splice(i,1);continue;}if(vo.pri){pr+=s;prOn=true;}else if(vo.clean)cl+=s;else fx+=s*vo.dry;}
+      for(let i=voices.length-1;i>=0;i--){const vo=voices[i];const s=vo.f(vo.t);vo.t+=1/sr;if(s===null){voices.splice(i,1);continue;}if(vo.pri){pr+=s;prOn=true;if(vo.solo)soloOn=true;}else if(vo.clean)cl+=s;else fx+=s*vo.dry;}
       // short stereo-less echo for a modern "space" feel on effects
       const di=(dw-Math.floor(sr*0.15)+16384)&16383;const echo=DL[di];DL[dw]=fx+echo*0.32;dw=(dw+1)&16383;
-      duck+=((prOn?A.DUCK:1)-duck)*0.003; // eases down in about 10 ms, back up the same way
+      duck+=((soloOn?0:prOn?A.DUCK:1)-duck)*0.003; // eases down in about 10 ms, back up the same way; a "solo" sound (the car crash) silences everything else
       x=(x+fx+echo*0.28+cl)*duck+pr;
       hpY=0.995*(hpY+x-hpX);hpX=x; RB[wr]=Math.tanh(hpY*1.15);wr=(wr+1)&32767;}
   };
@@ -362,7 +362,7 @@ const m=new TargMachine({prog,sprites:await get('hrl_11d-1.11d')});m.reset();win
 const au=new TargAudio();window.au=au;
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.8);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen.m4a',0.85);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.4);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen.m4a',0.85);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -559,7 +559,7 @@ const ENEMY_EMPTY={0x00:1,0x09:1,0x11:1,0x18:1}; // the cell of a pair that is e
 // square frames side by side (as many as its width divided by its height) which are shown in turn, left to right,
 // over and over. The empty margin around the artwork is trimmed off here (the same amount from every frame, so the
 // frames stay lined up) and what is left is stretched to the enemy's 8x8 square.
-const ENEMY_FRAME_MS=130;   // how long each frame is shown, in milliseconds (6 frames x 130 = one pulse every 0.78 s)
+const ENEMY_FRAME_MS=140;   // how long each frame is shown, in milliseconds (6 frames x 140 = one pulse every 0.84 s)
 let animT=0,animLast=0;     // animation clock shared by the enemies and the car: real time, stopped while paused
 const enemyImg=new Image();let enemySpr=null,enemyOK=false,enemySrc=[],enemyN=0;
 enemyImg.onload=()=>{const W=enemyImg.naturalWidth,H=enemyImg.naturalHeight;if(!W||!H)return;
