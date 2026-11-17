@@ -222,7 +222,7 @@ function TargMachine(roms){ // roms: {prog: Uint8Array(0x2800) for 0x1800-0x3fff
         for(let b=0;b<8;b++){const x=sx+half*8+b; if(x<0||x>255)continue; if(bits&(0x80>>b))img[y*256+x]=c;}}};
     drawS((m.mol>>4)|((m.cpl&0x40)?16:0),m.s2x,m.s2y,pal[1]);
     if(m.extra)for(const [c,x,y] of m.extra)drawS(c,x,y,pal[1]);
-    {const pc=(m.mol&15)|((m.cpl&0x20)?16:0);if(!m.hideP&&!(m.hiCar&&pc<4))drawS(pc,m.s1x,m.s1y,pal[0]);}
+    {const pc=(m.mol&15)|((m.cpl&0x20)?16:0);if(!m.hideP&&!m.hideBoom&&!(m.hiCar&&pc<4))drawS(pc,m.s1x,m.s1y,pal[0]);}
   };
 }
 if(typeof module!=='undefined')module.exports=TargMachine;
@@ -384,7 +384,7 @@ const m=new TargMachine({prog,sprites:await get('hrl_11d-1.11d')});m.reset();win
 const au=new TargAudio();window.au=au;au.create();
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.2);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.14);au.load('goafter','sounds/game_over_after.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.2);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.161);au.load('goafter','sounds/game_over_after.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -816,11 +816,16 @@ let bonusLen=0;
 
 // ---------- main loop ----------
 let paused=false,last=performance.now(),acc=0;
+const BOOM=[[8,8],[9,9],[10,8],[11,9],[12,8],[13,30]]; // the game's explosion: [picture, frames], measured from the game itself
 function step(){
   if(cd>0)cd--;
   freeDuck();
   if(frozen){fireOff();au.frame([],FCYC);if(frozen.type==='hyper')hyperTick(frozen);
-    else if(frozen.type==='death'){if(++frozen.f>=frozen.dur){frozen=null;au.hold=false;}} // car destroyed: board held still until the crash sound has finished
+    else if(frozen.type==='death'){const z=frozen; // car destroyed: board held still until the crash sound has finished ...
+      // ... while the car's explosion still plays out, with the game's own pictures (8-13) at the game's own pace
+      let k=z.f,pic=15;for(const [pp,n] of BOOM){if(k<n){pic=pp;break;}k-=n;}
+      m.mol=(m.mol&0xf0)|pic;
+      if(++z.f>=z.dur){m.mol=(m.mol&0xf0)|z.pc0;frozen=null;au.hold=false;m.hideBoom=true;}} // the game resumes exactly where it stopped
     else if(frozen.type==='hold'){if(++frozen.f>=frozen.dur)frozen=null;} // bonus screen held for its sound (no button skips it)
     else{const z=frozen; // screen-clear celebration: always plays in full, FIRE does not cut it short
       if(++z.f>=z.dur)fanEnd();}return;}
@@ -833,7 +838,9 @@ function step(){
   const pc=m.mol&15;
   if(started&&wasAlive&&boardUp()&&pc>=8&&pc<=13){
     const last=m.ram[0xc1]===1;if(last)finalCrash=frameNo;au.playerDeath(last);
-    fireOff();if(!last&&au.has('crash')){frozen={type:'death',f:0,dur:Math.max(1,Math.round(au.dur('crash')*60))};au.hold=true;}}
+    fireOff();if(!last&&au.has('crash')){frozen={type:'death',f:0,dur:Math.max(1,Math.round(au.dur('crash')*60)),pc0:pc};au.hold=true;}}
+  // after the freeze the game runs its explosion (8-13) once more: the car stays hidden until it has, so it is only seen once
+  if(m.hideBoom&&(!boardUp()||(m.mol&15)<8||(m.mol&15)>13))m.hideBoom=false;
   au.frame(sev,FCYC);sev.length=0;
   if(ghostStep()===2&&!au.has('fire'))au.play('shoot');turnStep();skidCheck();fireCheck();
   if(fireV&&m.ram[0xb1]===0)fireOff();
