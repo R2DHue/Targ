@@ -309,19 +309,12 @@ function TargAudio(){
   A.playing=vo=>!!vo&&voices.includes(vo);
   // where a recorded sound becomes inaudible (below about -50 dB), in seconds: used to line sounds up end to end
   A.audEnd=k=>{const s=S[k];if(!s||!s.data)return 0;if(s.end==null){const d=s.data;let j=d.length-1;while(j>0&&Math.abs(d[j])<0.003)j--;s.end=(j+1)/sr;}return s.end;};
-  // a looping recorded sound: while vo.held is true it repeats the part between ls and le (crossfaded over xf seconds);
-  // A.release(vo) crossfades straight into the part after le, so it ends with its natural tail
-  A.loop=(k,ls,le,xf)=>{if(!ctx)return null;const s=S[k];if(!s||!s.data)return null;const d=s.data,g=s.gain;
-    const XF=Math.max(1,Math.round(xf*sr)),LS=Math.max(XF,Math.round(ls*sr)),LE=Math.min(d.length,Math.round(le*sr));let i=0,j=-1,r=0;
-    const vo={t:0,dry:1,clean:true,amp:1,g:1,held:true,rel:false};
-    vo.f=()=>{if(vo.rel&&j<0){vo.rel=false;if(i<LE){j=i;i=LE;r=XF;}}
-      if(i>=d.length)return null;let x;
-      if(r>0){const w=r/XF;x=d[j]*w+d[i]*(1-w);j++;i++;r--;if(!r)j=-1;}
-      else if(vo.held&&i>=LE-XF&&i<LE){const w=(i-(LE-XF))/XF;x=d[i]*(1-w)+d[LS-XF+(i-(LE-XF))]*w;i++;if(i>=LE)i=LS;}
-      else x=d[i++];
-      vo.g+=(vo.amp-vo.g)*0.0015;return x*g*vo.g;};
+  // a recorded sound played through to its natural end, and started again from the top as long as vo.held is true
+  // (the silence after its last audible sound is skipped, so a repeat follows straight on)
+  A.repeat=k=>{if(!ctx)return null;const s=S[k];if(!s||!s.data)return null;const d=s.data,g=s.gain,E=Math.max(1,Math.min(d.length,Math.round(A.audEnd(k)*sr)+Math.round(0.01*sr)));let i=0;
+    const vo={t:0,dry:1,clean:true,amp:1,g:1,held:true};
+    vo.f=()=>{if(i>=E){if(!vo.held)return null;i=0;}vo.g+=(vo.amp-vo.g)*0.0015;return d[i++]*g*vo.g;};
     voices.push(vo);return vo;};
-  A.release=vo=>{if(vo&&vo.held){vo.held=false;vo.rel=true;}};
   A.dur=k=>S[k]&&S[k].data?S[k].data.length/sr:0; // length of a recorded sound in seconds (0 if not loaded)
   A.stop=vo=>{if(!vo||vo.fade)return;vo.fade=true;const f=vo.f;let g=1;vo.f=t=>{g-=1/(sr*0.08);if(g<=0)return null;const s=f(t);return s===null?null:s*g;};};
   // the player's car was hit: play the Crash sound, and keep the game's own explosion/"enemy destroyed"
@@ -391,7 +384,7 @@ const m=new TargMachine({prog,sprites:await get('hrl_11d-1.11d')});m.reset();win
 const au=new TargAudio();window.au=au;au.create();
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.2);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.4);au.load('goafter','sounds/game_over_after.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.2);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.14);au.load('goafter','sounds/game_over_after.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -770,13 +763,19 @@ function skidCheck(){
   skidding=rev;
 }
 
-// ---------- the car's fire sound: car_fire.m4a loops while the car is firing (FIRE held, or a volley still leaving) ----------
-// When firing stops it crossfades into the recording's own fade-out.
-let fireV=null;
+// ---------- the car's fire sound (car_fire.m4a) ----------
+// Every press of FIRE starts it from the beginning (a sound already playing is cut off). While FIRE is held it plays
+// through to its "pew" and starts again from the top; once FIRE is let go it finishes the play-through it is on.
+// It is cut off at once when the screen's last enemy is destroyed, when the car is lost, and whenever the game is
+// frozen (fanfare, bonus screen, hyperspace), so it never carries on into those.
+let fireV=null,prevFireBtn=0,prevInPlay=false;
+const fireOff=()=>{if(fireV){au.stop(fireV);fireV=null;}};
 function fireCheck(){
-  const firing=started&&alive()&&!frozen&&(m.inp.fire||!!pend);
-  if(firing&&!fireV)fireV=au.loop('fire',0.10,0.70,0.04);
-  else if(!firing&&fireV){au.release(fireV);fireV=null;}
+  const btn=!!m.inp.fire,inPlay=started&&alive()&&m.ram[0xb1]>0;
+  // a fresh press, or FIRE already held as the car comes (back) into play on a new car or a new screen
+  if(btn&&inPlay&&(!prevFireBtn||!prevInPlay)){fireOff();fireV=au.repeat('fire');}
+  if(fireV){if(!inPlay)fireOff();else{fireV.held=btn;if(!au.playing(fireV))fireV=null;}}
+  prevFireBtn=btn;prevInPlay=inPlay;
 }
 
 // ---------- coin: recorded coin-drop instead of the game's beep ----------
@@ -820,7 +819,7 @@ let paused=false,last=performance.now(),acc=0;
 function step(){
   if(cd>0)cd--;
   freeDuck();
-  if(frozen){au.frame([],FCYC);if(frozen.type==='hyper')hyperTick(frozen);
+  if(frozen){fireOff();au.frame([],FCYC);if(frozen.type==='hyper')hyperTick(frozen);
     else if(frozen.type==='death'){if(++frozen.f>=frozen.dur){frozen=null;au.hold=false;}} // car destroyed: board held still until the crash sound has finished
     else if(frozen.type==='hold'){if(++frozen.f>=frozen.dur)frozen=null;} // bonus screen held for its sound (no button skips it)
     else{const z=frozen; // screen-clear celebration: always plays in full, FIRE does not cut it short
@@ -834,9 +833,10 @@ function step(){
   const pc=m.mol&15;
   if(started&&wasAlive&&boardUp()&&pc>=8&&pc<=13){
     const last=m.ram[0xc1]===1;if(last)finalCrash=frameNo;au.playerDeath(last);
-    if(!last&&au.has('crash')){frozen={type:'death',f:0,dur:Math.max(1,Math.round(au.dur('crash')*60))};au.hold=true;if(fireV){au.release(fireV);fireV=null;}}}
+    fireOff();if(!last&&au.has('crash')){frozen={type:'death',f:0,dur:Math.max(1,Math.round(au.dur('crash')*60))};au.hold=true;}}
   au.frame(sev,FCYC);sev.length=0;
   if(ghostStep()===2&&!au.has('fire'))au.play('shoot');turnStep();skidCheck();fireCheck();
+  if(fireV&&m.ram[0xb1]===0)fireOff();
   clearCheck();bonusCheck();spectarCheck();gameOverCheck();coinCheck();introCheck();bonusScreenCheck();
 }
 function loop(t){acc+=Math.min(100,t-last);last=t;
