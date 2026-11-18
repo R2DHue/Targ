@@ -506,12 +506,16 @@ function clearCheck(){
 }
 function fanEnd(){frozen=null;au.hold=false;fwStop();}
 
-// ---------- fireworks: three video clips (upper left, lower right, lower left) played together over the board during the fanfare ----------
+// ---------- fireworks: six video clips played over the board during the fanfare ----------
+// The first three (upper left, lower right, lower left) start together; the others start later (at = seconds into the
+// celebration): the red-and-gold shell in the upper right, the colour-changing shell in the middle, the gold willow up top.
 // The clips have a black background. Each frame is copied to a small canvas and every pixel's brightness becomes its
 // opacity (black -> fully transparent), so only the sparks are drawn over the game. x/y/w/h are in board pixels (240x256).
 const FAN_DUR=405,FAN_FADE=36; // 6.75 s celebration, fading out over the last 0.6 s
 const FW=[{url:'video/fireworks1.mp4',x:-14,y:2,w:208,h:156},{url:'video/fireworks2.mp4',x:78,y:84,w:174,h:174},
-  {url:'video/fireworks3.mp4',x:-26,y:122,w:150,h:150}];
+  {url:'video/fireworks3.mp4',x:-26,y:122,w:150,h:150},
+  {url:'video/fireworks4.mp4',x:112,y:-24,w:156,h:156,at:0.5},{url:'video/fireworks5.mp4',x:32,y:78,w:176,h:176,at:1.4},
+  {url:'video/fireworks6.mp4',x:16,y:-22,w:164,h:164,at:3.4}];
 for(const o of FW){const v=document.createElement('video');v.muted=true;v.defaultMuted=true;v.playsInline=true;
   v.setAttribute('muted','');v.setAttribute('playsinline','');v.setAttribute('webkit-playsinline','');v.preload='auto';
   v.style.cssText='position:absolute;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none';document.body.appendChild(v);o.v=v;
@@ -524,9 +528,10 @@ let fwPrimed=false;
 function fwPrime(){if(fwPrimed)return;fwPrimed=true;
   for(const o of FW){if(!o.v.src){fwPrimed=false;continue;}if(fanOn())continue;
     try{const p=o.v.play();if(p&&p.then)p.then(()=>{if(!fanOn())o.v.pause();}).catch(()=>{fwPrimed=false;});}catch(e){fwPrimed=false;}}}
-function fwStart(){for(const o of FW){if(!o.v.src)continue;try{o.v.currentTime=0;}catch(e){}fwPlay(o.v);}}
+function fwStart(){for(const o of FW){if(!o.v.src)continue;o.kt=-1;try{o.v.currentTime=0;}catch(e){}if(o.at)o.v.pause();else fwPlay(o.v);}} // late starters wait for their moment (fwDraw starts them)
 function fwStop(){for(const o of FW)try{o.v.pause();}catch(e){}}
 function fwKey(o){const v=o.v;if(v.readyState<2||!v.videoWidth)return false;
+  if(o.c&&o.kt===v.currentTime)return true; // the video has not moved on since the last screen refresh: reuse the keyed frame
   const W=v.videoWidth,H=v.videoHeight;
   if(!o.c){o.c=document.createElement('canvas');o.c.width=W;o.c.height=H;o.g=o.c.getContext('2d',{willReadFrequently:true});
     o.mask=new Float32Array(W*H); // soft edges so the clip's rectangle never shows
@@ -536,10 +541,11 @@ function fwKey(o){const v=o.v;if(v.readyState<2||!v.videoWidth)return false;
     for(let i=0,j=0;i<d.length;i+=4,j++){const r=d[i],g=d[i+1],b=d[i+2];let mx=r>g?r:g;if(b>mx)mx=b;
       if(mx<14){d[i+3]=0;continue;}
       const k=255/mx,a=(mx-14)*1.5;d[i]=r*k;d[i+1]=g*k;d[i+2]=b*k;d[i+3]=(a>255?255:a)*mk[j];}
-    o.g.putImageData(im,0,0);}catch(e){return false;}
+    o.g.putImageData(im,0,0);o.kt=v.currentTime;}catch(e){return false;}
   return true;}
-function fwDraw(z,fade){let shown=0;const t=z.f/60;
-  for(const o of FW){const v=o.v;if(!v.src)continue;
+function fwDraw(z,fade){let shown=0;const T=z.f/60;
+  for(const o of FW){const v=o.v;if(!v.src)continue;const t=T-(o.at||0);
+    if(t<0){if(!v.paused)v.pause();continue;} // not its turn yet
     if(paused){if(!v.paused)v.pause();}
     else if(!z.skip){if(v.paused&&!v.ended&&v.readyState>=2)fwPlay(v);
       if(v.readyState>=2&&!v.seeking&&Math.abs(v.currentTime-t)>0.35&&t<v.duration-0.15)try{v.currentTime=t;}catch(e){}} // re-sync after a stall
@@ -635,7 +641,14 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
 // very same 8x8 pixels, turned to face the same way. Explosions keep the original pictures.
 // car.png is a strip of square frames side by side (as many as its width divided by its height), each showing the
 // car from above with its FRONT TO THE RIGHT and the artwork reaching the edges of its square.
-const CAR_FRAME_MS=50;        // how long each frame is shown, in milliseconds (4 frames x 50 = one wheel turn every 0.2 s)
+// The wheels turn with the distance the car actually drives, not with time: slower car, slower wheels; car
+// stopped (at a corner, or frozen), wheels stopped. The game moves the car 0-2 px a frame, about 1.1 on average.
+const TIRE_CYCLE_PX=13;       // game pixels driven for one full cycle of the frames: 13 = a new frame about every 50 ms at the usual speed
+let carDist=0,carLX=-1,carLY=-1;
+function carRoll(){ // called once per game frame: adds up how far the car has driven
+  const x=m.ram[0x1c],y=m.ram[0x1d];
+  if(carLX>=0&&alive()){const d=Math.abs(x-carLX)+Math.abs(y-carLY);if(d<8)carDist+=d;} // bigger jumps are a respawn or hyperspace, not driving
+  carLX=x;carLY=y;}
 const CAR_ART_FACES=0;        // which way the artwork's front points: 0 right, 1 down, 2 left, 3 up
 const carImg=new Image();let carOK=false,carN=0,carSpr=null;
 carImg.onload=()=>{const w=carImg.naturalWidth,h=carImg.naturalHeight;if(!w||!h)return;carN=Math.max(1,Math.round(w/h));carOK=true;carSpr=null;};
@@ -655,7 +668,7 @@ function drawCar(){ // called with the overlay at 1:1 canvas pixels
   const pc=(m.mol&15)|((m.cpl&0x20)?16:0);if(m.hideP||pc>=4)return;
   if(!carSpr)buildCarSprites(); // the overlay's resolution has just changed: make them again at the new size
   // same place the blocky picture goes: the hardware position counts from the right and from the bottom
-  fx.drawImage(carSpr[pc][((animT/CAR_FRAME_MS)|0)%carN],(224-m.s1x)*FXS,(240-m.s1y)*FXS);
+  fx.drawImage(carSpr[pc][Math.floor(((carDist%TIRE_CYCLE_PX)/TIRE_CYCLE_PX)*carN)%carN],(224-m.s1x)*FXS,(240-m.s1y)*FXS);
 }
 
 function drawFx(){
@@ -844,6 +857,7 @@ function step(){
   // after the freeze the game runs its explosion (8-13) once more: the car stays hidden until it has, so it is only seen once
   if(m.hideBoom&&(!boardUp()||(m.mol&15)<8||(m.mol&15)>13))m.hideBoom=false;
   au.frame(sev,FCYC);sev.length=0;
+  carRoll();
   if(ghostStep()===2&&!au.has('fire'))au.play('shoot');turnStep();skidCheck();fireCheck();
   if(fireV&&m.ram[0xb1]===0)fireOff();
   clearCheck();bonusCheck();spectarCheck();gameOverCheck();coinCheck();introCheck();bonusScreenCheck();
