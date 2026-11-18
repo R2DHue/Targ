@@ -635,7 +635,7 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
 // very same 8x8 pixels, turned to face the same way. Explosions keep the original pictures.
 // car.png is a strip of square frames side by side (as many as its width divided by its height), each showing the
 // car from above with its FRONT TO THE RIGHT and the artwork reaching the edges of its square.
-const CAR_FRAME_MS=150;       // how long each frame is shown, in milliseconds (4 frames x 150 = one wheel turn every 0.6 s)
+const CAR_FRAME_MS=50;        // how long each frame is shown, in milliseconds (4 frames x 50 = one wheel turn every 0.2 s)
 const CAR_ART_FACES=0;        // which way the artwork's front points: 0 right, 1 down, 2 left, 3 up
 const carImg=new Image();let carOK=false,carN=0,carSpr=null;
 carImg.onload=()=>{const w=carImg.naturalWidth,h=carImg.naturalHeight;if(!w||!h)return;carN=Math.max(1,Math.round(w/h));carOK=true;carSpr=null;};
