@@ -220,8 +220,8 @@ function TargMachine(roms){ // roms: {prog: Uint8Array(0x2800) for 0x1800-0x3fff
       for(let half=0;half<2;half++)for(let r=0;r<16;r++){const bits=spr[(code&31)*32+half*16+r];
         const y=sy+r; if(y<0||y>255)continue;
         for(let b=0;b<8;b++){const x=sx+half*8+b; if(x<0||x>255)continue; if(bits&(0x80>>b))img[y*256+x]=c;}}};
-    drawS((m.mol>>4)|((m.cpl&0x40)?16:0),m.s2x,m.s2y,pal[1]);
-    if(m.extra)for(const [c,x,y] of m.extra)drawS(c,x,y,pal[1]);
+    drawS((m.mol>>4)|((m.cpl&0x40)?16:0),m.s2x,m.s2y,m.gameMCol||pal[1]); // each missile in its own colour (see MISSILE_COLORS)
+    if(m.extra)for(const [c,x,y,k] of m.extra)drawS(c,x,y,k||pal[1]);
     {const pc=(m.mol&15)|((m.cpl&0x20)?16:0);if(!m.hideP&&!m.hideBoom&&!(m.hiCar&&pc<4))drawS(pc,m.s1x,m.s1y,pal[0]);}
   };
 }
@@ -384,7 +384,7 @@ const m=new TargMachine({prog,sprites:await get('hrl_11d-1.11d')});m.reset();win
 const au=new TargAudio();window.au=au;au.create();
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.2);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.161);au.load('goafter','sounds/game_over_after_decay.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.161);au.load('goafter','sounds/game_over_after_decay.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -416,7 +416,12 @@ let started=false;
 const MISSILE_SPACING=16; // px between neighbouring missiles on a straight run; tune here
 const EXTRA_MISSILES=3;   // extras for a quick tap (a tap = 4 missiles in total)
 const GAME_LEAD_FRAMES=0; // frames early the game is given FIRE, so its missile leaves on time
-const MPIC={'1,0':7,'-1,0':6,'0,1':4,'0,-1':5}; // missile picture for each direction (dx,dy in the game's coordinates), as the game draws them
+const MPIC={'1,0':7,'-1,0':6,'0,1':4,'0,-1':5};
+// Every missile the car fires (the game's own and the extras alike) takes the next colour in this cycle, and keeps it
+// for as long as it flies. Colours only: the missiles' shape, speed and hits are untouched.
+const MISSILE_COLORS=['#FFFFFF','#F4FF3E','#FFA827','#FF0000','#FF4CD8','#62D6EB','#C426FF','#FFA827','#F4FF3E'];
+const MCOL=MISSILE_COLORS.map(h=>{const v=parseInt(h.slice(1),16);return (0xff000000|((v&255)<<16)|(v&0xff00)|(v>>16))>>>0;}); // as the screen buffer stores them
+let mColN=0;const nextMCol=()=>MCOL[mColN++%MCOL.length]; // missile picture for each direction (dx,dy in the game's coordinates), as the game draws them
 let ghosts=[],pend=null,prevAct=0,lastMx=0,lastMy=0,gSpeed=2.25,carV=1,headX=0,headY=0,hpx=0,hpy=0,beat=0,lead=null,prevBtnG=0,gameWait=0; // lead: the missile in front ('game' or an extra)
 function moveGhost(g){ // advance one extra missile; returns false when it is spent (hit something / left the board)
   g.acc+=gSpeed;
@@ -437,7 +442,7 @@ function ghostStep(){ // returns 1 when the game fires, 2 when an extra missile 
   if(pd<8&&(pdx||pdy)&&!(pdx&&pdy)){headX=pdx;headY=pdy;carV=carV*0.95+pd*0.05;} // car's current heading and speed
   hpx=px;hpy=py;beat++;
   if(!alive()){ghosts=[];pend=null;}
-  else if(act&&!prevAct){pend={left:EXTRA_MISSILES};beat=0;lead='game';gameWait=0;ev=1;} // the game fired its own missile: queue a volley, it leads the stream
+  else if(act&&!prevAct){m.gameMCol=nextMCol();pend={left:EXTRA_MISSILES};beat=0;lead='game';gameWait=0;ev=1;} // the game fired its own missile: queue a volley, it leads the stream
   else if(act&&prevAct){const d=Math.abs(mx-lastMx)+Math.abs(my-lastMy);if(d<8)gSpeed=gSpeed*0.9+d*0.1;}
   prevAct=act;lastMx=mx;lastMy=my;
   // FIRE held with no volley queued (e.g. pressed again while the game's own missile is still flying): keep the stream going
@@ -451,7 +456,7 @@ function ghostStep(){ // returns 1 when the game fires, 2 when an extra missile 
     if(gameWait>0){if(--gameWait===0)gameWait=-1;} // gave the game FIRE: wait for its missile to leave (handled above when it does)
     if(!act&&btn&&gameWait===0&&due(GAME_LEAD_FRAMES))gameWait=4; // this slot is the game's: let it fire
     else if(gameWait<=0&&due(0)){gameWait=0;
-      const dx=headX,dy=headY,g={x:px+dx,y:py+dy,dx,dy,acc:0,trav:0,code:MPIC[dx+','+dy]};
+      const dx=headX,dy=headY,g={x:px+dx,y:py+dy,dx,dy,acc:0,trav:0,code:MPIC[dx+','+dy],col:nextMCol()};
       ghosts.push(g);lead=g;beat=0;if(--pend.left<=0&&!m.inp.fire)pend=null;ev=2;}}
   m.fireMask=started&&alive()&&!(fresh||gameWait>0); // what the game sees of the FIRE button on the next frame
   ghosts=ghosts.filter(moveGhost);
@@ -864,7 +869,7 @@ function step(){
 }
 function loop(t){acc+=Math.min(100,t-last);last=t;
   if(!paused)while(acc>=1000/60){step();acc-=1000/60;} else acc=0;
-  m.extra=ghosts.map(g=>[g.code,g.x,g.y]);
+  m.extra=ghosts.map(g=>[g.code,g.x,g.y,g.col]);
   m.hiEnemies=enemiesReady();m.hiCar=carReady();
   m.render(buf);if(frozen&&frozen.type==='hyper'){rippleWarp(buf,wbuf,frozen.f);ctx.putImageData(wid,-8,0);}else ctx.putImageData(id,-8,0);
   try{drawFx();}catch(e){console.error(e);} // a fault while painting the overlay must never stop the game itself
