@@ -312,17 +312,21 @@ function TargAudio(){
   A.audEnd=k=>{const s=S[k];if(!s||!s.data)return 0;if(s.end==null){const d=s.data;let j=d.length-1;while(j>0&&Math.abs(d[j])<0.003)j--;s.end=(j+1)/sr;}return s.end;};
   // a recorded sound played through to its natural end, and started again from the top as long as vo.held is true
   // (the silence after its last audible sound is skipped, so a repeat follows straight on)
-  A.repeat=k=>{if(!ctx)return null;const s=S[k];if(!s||!s.data)return null;const d=s.data,g=s.gain,E=Math.max(1,Math.min(d.length,Math.round(A.audEnd(k)*sr)+Math.round(0.01*sr)));let i=0;
+  A.repeat=(k,delay)=>{if(!ctx)return null;const s=S[k];if(!s||!s.data)return null;const d=s.data,g=s.gain,E=Math.max(1,Math.min(d.length,Math.round(A.audEnd(k)*sr)+Math.round(0.01*sr)));let i=-Math.round((delay||0)*sr);
     const vo={t:0,dry:1,clean:true,amp:1,g:1,held:true};
-    vo.f=()=>{if(i>=E){if(!vo.held)return null;i=0;}vo.g+=(vo.amp-vo.g)*0.0015;return d[i++]*g*vo.g;};
+    vo.f=()=>{if(i<0){i++;return 0;}if(i>=E){if(!vo.held)return null;i=0;}vo.g+=(vo.amp-vo.g)*0.0015;return d[i++]*g*vo.g;};
     voices.push(vo);return vo;};
   A.dur=k=>S[k]&&S[k].data?S[k].data.length/sr:0; // length of a recorded sound in seconds (0 if not loaded)
   A.stop=vo=>{if(!vo||vo.fade)return;vo.fade=true;const f=vo.f;let g=1;vo.f=t=>{g-=1/(sr*0.08);if(g<=0)return null;const s=f(t);return s===null?null:s*g;};};
+  // Targ_ASMR: starts when the Game Over sound ends and loops on through the attract mode, until a coin goes in or START
+  // is pressed (A.endLoopOff). Only one copy ever plays.
+  let endLoop=null;A.endLoopOn=delay=>{if(endLoop&&voices.includes(endLoop))return;endLoop=A.repeat('asmr',delay);};
+  A.endLoopOff=()=>{if(endLoop){A.stop(endLoop);endLoop=null;}};
   // the player's car was hit: play the Crash sound, and keep the game's own explosion/"enemy destroyed"
   // effects quiet while the car's death plays out (it is the player who died, not an enemy)
   // on the last car the Game Over sound replaces the Crash sound and rings on through the END OF GAME screen
   let deathMute=0;A.playerDeath=last=>{
-    if(last){deathMute=tick+Math.round(sr*4);A.sample('gameover','gameover');if(A.has('gameover'))A.sample('goafter',null,A.audEnd('gameover'));return;}
+    if(last){deathMute=tick+Math.round(sr*4);A.sample('gameover','gameover');if(A.has('gameover'))A.endLoopOn(A.audEnd('gameover'));return;}
     const v=A.sample('crash','crash');if(v){v.pri=true;v.solo=true;} // the crash plays alone: every other game sound is silent until it ends
     deathMute=tick+Math.round(sr*(A.dur('crash')+2.5));}; // ... and the game's own explosion noises stay quiet after the freeze too
   A.muteSpec=sec=>{specMute=tick+Math.round(sec*sr);};
@@ -385,7 +389,7 @@ const m=new TargMachine({prog,sprites:await get('hrl_11d-1.11d')});m.reset();win
 const au=new TargAudio();window.au=au;au.create();
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.161);au.load('goafter','sounds/game_over_after_decay.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.161);au.load('asmr','sounds/Targ_ASMR.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -414,7 +418,7 @@ let started=false;
 // While FIRE is held the game would re-fire its own missile whenever its last one is used up, wherever the stream
 // happened to be; instead the game only sees FIRE when a slot in the stream is due and its own missile is free, so its
 // missile takes that slot (and, being the game's own, can still hit a Spectar). A fresh press always reaches the game at once.
-const MISSILE_SPACING=16; // px between neighbouring missiles on a straight run; tune here
+const MISSILE_SPACING=8; // px between neighbouring missiles on a straight run (nose to nose; the missile is 6 long); tune here
 const EXTRA_MISSILES=3;   // extras for a quick tap (a tap = 4 missiles in total)
 const GAME_LEAD_FRAMES=0; // frames early the game is given FIRE, so its missile leaves on time
 const MPIC={'1,0':7,'-1,0':6,'0,1':4,'0,-1':5};
@@ -451,7 +455,8 @@ const fireEvery=()=>Math.max(4,Math.round(MISSILE_SPACING/Math.max(0.6,gSpeed-ca
 function ghostStep(){ // returns 1 when the game fires, 2 when an extra missile launches
   const act=m.ram[0x31],mx=m.ram[0x22],my=m.ram[0x23];let ev=0;const btn=!!m.inp.fire,fresh=btn&&!prevBtnG;prevBtnG=btn;
   const px=m.ram[0x1c],py=m.ram[0x1d],pdx=Math.sign(px-hpx),pdy=Math.sign(py-hpy),pd=Math.abs(px-hpx)+Math.abs(py-hpy);
-  if(pd<8&&(pdx||pdy)&&!(pdx&&pdy)){headX=pdx;headY=pdy;carV=carV*0.95+pd*0.05;} // car's current heading and speed
+  if(pd<8&&(pdx||pdy)&&!(pdx&&pdy)){if((pdx!==headX||pdy!==headY)&&(headX||headY))beat=99; // turned a corner: the next missile goes at once, no gap
+    headX=pdx;headY=pdy;carV=carV*0.95+pd*0.05;} // car's current heading and speed
   hpx=px;hpy=py;beat++;
   if(!alive()){ghosts=[];pend=null;}
   else if(act&&!prevAct){m.gameMArt=nextMCol();m.gameMCol=MCOL[m.gameMArt];pend={left:EXTRA_MISSILES};beat=0;lead='game';gameWait=0;ev=1;} // the game fired its own missile: queue a volley, it leads the stream
@@ -523,16 +528,18 @@ function clearCheck(){
 }
 function fanEnd(){frozen=null;au.hold=false;fwStop();}
 
-// ---------- fireworks: six video clips played over the board during the fanfare ----------
+// ---------- fireworks: seven video clips played over the board during the fanfare ----------
 // The first three (upper left, lower right, lower left) start together; the others start later (at = seconds into the
-// celebration): the red-and-gold shell in the upper right, the colour-changing shell in the middle, the gold willow up top.
+// celebration): the red-and-gold shell in the upper right, the colour-changing shell in the middle, the gold willow up top,
+// and last the grand finale, centred on the SCREEN CLEAR! message, which the celebration waits for.
 // The clips have a black background. Each frame is copied to a small canvas and every pixel's brightness becomes its
 // opacity (black -> fully transparent), so only the sparks are drawn over the game. x/y/w/h are in board pixels (240x256).
-const FAN_DUR=405,FAN_FADE=36; // 6.75 s celebration, fading out over the last 0.6 s
+const FAN_DUR=750,FAN_FADE=36; // 12.5 s celebration (long enough for the grand finale), fading out over the last 0.6 s
 const FW=[{url:'video/fireworks1.mp4',x:-14,y:2,w:208,h:156},{url:'video/fireworks2.mp4',x:78,y:84,w:174,h:174},
   {url:'video/fireworks3.mp4',x:-26,y:122,w:150,h:150},
   {url:'video/fireworks4.mp4',x:112,y:-24,w:156,h:156,at:0.5},{url:'video/fireworks5.mp4',x:32,y:78,w:176,h:176,at:1.4},
-  {url:'video/fireworks6.mp4',x:16,y:-22,w:164,h:164,at:3.4}];
+  {url:'video/fireworks6.mp4',x:16,y:-22,w:164,h:164,at:3.4},
+  {url:'video/fireworks_final.mp4',x:-5,y:40,w:260,h:181,at:2.0}]; // the grand finale, centred on SCREEN CLEAR!
 for(const o of FW){const v=document.createElement('video');v.muted=true;v.defaultMuted=true;v.playsInline=true;
   v.setAttribute('muted','');v.setAttribute('playsinline','');v.setAttribute('webkit-playsinline','');v.preload='auto';
   v.style.cssText='position:absolute;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none';document.body.appendChild(v);o.v=v;
@@ -799,7 +806,7 @@ function spectarCheck(){
 // The Game Over sound normally starts at the final crash; this only plays it if that crash wasn't caught.
 let endShown=false,finalCrash=-1e9,frameNo=0;
 function gameOverCheck(){const a=16*32+12,on=m.vram[a]===0x45&&m.vram[a+1]===0x4e&&m.vram[a+2]===0x44;
-  if(on&&!endShown){if(started&&frameNo-finalCrash>60*6){au.sample('gameover','gameover');if(au.has('gameover'))au.sample('goafter',null,au.audEnd('gameover'));}spectarHeard=false;}endShown=on;}
+  if(on&&!endShown){if(started&&frameNo-finalCrash>60*6){au.sample('gameover','gameover');if(au.has('gameover'))au.endLoopOn(au.audEnd('gameover'));}spectarHeard=false;}endShown=on;}
 
 // ---------- skid: the game itself makes the car brake before it can reverse; play a skid while it does ----------
 let skidV=null,skidding=false,skHx=0,skHy=0;
@@ -830,7 +837,7 @@ function fireCheck(){
 // ---------- coin: recorded coin-drop instead of the game's beep ----------
 let prevCoin=0,coinMute=0;
 function coinCheck(){
-  if(I.coin&&!prevCoin)au.sample('coin');
+  if(I.coin&&!prevCoin){au.endLoopOff();au.sample('coin');} // a coin also ends the after-game loop
   if(I.coin)coinMute=30;else if(coinMute>0)coinMute--; // the game's own coin beep stays silent until 0.5 s after the button is let go
   prevCoin=I.coin;
 }
@@ -839,7 +846,7 @@ function coinCheck(){
 let introArmed=false,prevStart=0,introIn=0;
 function introCheck(){
   const st=I.start1||I.start2,inGame=boardUp()&&m.ram[0xc1]>0;
-  if(st&&!prevStart&&!inGame)introArmed=true; // START pressed while no game is running
+  if(st&&!prevStart){au.endLoopOff();if(!inGame)introArmed=true;} // START ends the after-game loop; pressed while no game is running, it arms the intro
   prevStart=st;
   if(introArmed&&inGame&&alive()){introArmed=false;const v=au.pri('alarm');introIn=v?Math.max(1,Math.round(au.dur('alarm')*60)):1;} // alarm ...
   if(introIn&&--introIn===0)au.pri('intruder'); // ... then the announcement as soon as the alarm ends
