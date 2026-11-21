@@ -325,9 +325,12 @@ function TargAudio(){
   // the player's car was hit: play the Crash sound, and keep the game's own explosion/"enemy destroyed"
   // effects quiet while the car's death plays out (it is the player who died, not an enemy)
   // on the last car the Game Over sound replaces the Crash sound and rings on through the END OF GAME screen
+  A.taunts=[];A.lastTaunt=null;A.tauntDelay=0.6; // filled in where the sounds are loaded (TAUNTS)
   let deathMute=0;A.playerDeath=last=>{
     if(last){deathMute=tick+Math.round(sr*4);A.sample('gameover','gameover');if(A.has('gameover'))A.endLoopOn(A.audEnd('gameover'));return;}
     const v=A.sample('crash','crash');if(v){v.pri=true;v.solo=true;} // the crash plays alone: every other game sound is silent until it ends
+    {const ok=A.taunts.filter(t=>A.has(t));if(ok.length){let i;do{i=Math.floor(Math.random()*ok.length);}while(ok.length>1&&ok[i]===A.lastTaunt);A.lastTaunt=ok[i];
+      const tv=A.sample(ok[i],null,A.tauntDelay);if(tv)tv.pri=true;}} // ... except a robot taunt, which joins in just after it starts
     deathMute=tick+Math.round(sr*(A.dur('crash')+2.5));}; // ... and the game's own explosion noises stay quiet after the freeze too
   A.muteSpec=sec=>{specMute=tick+Math.round(sec*sr);};
   A.create=()=>{if(ctx)return;const C=window.AudioContext||window.webkitAudioContext;if(!C)return;try{ctx=new C();}catch(e){return;}sr=ctx.sampleRate;
@@ -387,9 +390,14 @@ for(const [n,o] of parts)prog.set(await get(n),o);
 if(prog[0x1D10-0x1800]===0xC9&&prog[0x1D11-0x1800]===0x09)prog[0x1D11-0x1800]=0x99;
 const m=new TargMachine({prog,sprites:await get('hrl_11d-1.11d')});m.reset();window.m=m;
 const au=new TargAudio();window.au=au;au.create();
+// robot taunts: one of these, picked at random (never the same one twice in a row), each time a car is lost and the
+// screen has to be played again. Good Job on the bonus screen: the first cleared screen of each game always gets the
+// original recording (Good_Job_Bonus.mp3); each clear after that has a GOOD_JOB_ODDS chance of the new one (good_job.m4a)
+const TAUNTS=['we_got_you','humanoid_failed','collision_detected','you_failed'],TAUNT_DELAY=0.6,GOOD_JOB_ODDS=0.2;
+au.taunts=TAUNTS;au.tauntDelay=TAUNT_DELAY;
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/car_dies.m4a','sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.161);au.load('asmr','sounds/Targ_ASMR.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/car_dies.m4a','sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('goodjob2','sounds/good_job.m4a',2.0);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('fire','sounds/car_fire.m4a',0.161);au.load('asmr','sounds/Targ_ASMR.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.load('fwboom','sounds/fireworks_audio_only.m4a',0.5);au.load('ohm','sounds/earth_ohm.m4a',0.1);for(const t of TAUNTS)au.load(t,'sounds/'+t+'.m4a',0.9);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -524,7 +532,7 @@ function clearCheck(){
   if(fanfareIn&&--fanfareIn===0){frozen={type:'fan',f:0,dur:FAN_DUR,parts:[],arm:false,skip:false};au.hold=true;
     // recorded trumpet fanfare (once) + fireworks booms/crackle, and DayTrip10 started so that it ends exactly where the trumpets end
     const off=au.has('fanfare')&&au.has('daytrip')?au.audEnd('fanfare')-au.audEnd('daytrip'):0;
-    frozen.snd=[au.sample('fanfare','fanfare',off<0?-off:0),au.sample('fireworks')];if(au.has('daytrip'))frozen.snd.push(au.sample('daytrip',null,off>0?off:0));fwStart();}
+    frozen.snd=[au.sample('fanfare','fanfare',off<0?-off:0),au.sample('fireworks'),au.sample('fwboom')];if(au.has('daytrip'))frozen.snd.push(au.sample('daytrip',null,off>0?off:0));fwStart();}
 }
 function fanEnd(){frozen=null;au.hold=false;fwStop();}
 
@@ -534,12 +542,12 @@ function fanEnd(){frozen=null;au.hold=false;fwStop();}
 // and last the grand finale, centred on the SCREEN CLEAR! message, which the celebration waits for.
 // The clips have a black background. Each frame is copied to a small canvas and every pixel's brightness becomes its
 // opacity (black -> fully transparent), so only the sparks are drawn over the game. x/y/w/h are in board pixels (240x256).
-const FAN_DUR=750,FAN_FADE=36; // 12.5 s celebration (long enough for the grand finale), fading out over the last 0.6 s
+const FAN_DUR=870,FAN_FADE=36; // 14.5 s celebration (the grand finale starts at 1 s and runs 13.5 s), fading out over the last 0.6 s
 const FW=[{url:'video/fireworks1.mp4',x:-14,y:2,w:208,h:156},{url:'video/fireworks2.mp4',x:78,y:84,w:174,h:174},
   {url:'video/fireworks3.mp4',x:-26,y:122,w:150,h:150},
   {url:'video/fireworks4.mp4',x:112,y:-24,w:156,h:156,at:0.5},{url:'video/fireworks5.mp4',x:32,y:78,w:176,h:176,at:1.4},
   {url:'video/fireworks6.mp4',x:16,y:-22,w:164,h:164,at:3.4},
-  {url:'video/fireworks_final.mp4',x:-5,y:40,w:260,h:181,at:2.0}]; // the grand finale, centred on SCREEN CLEAR!
+  {url:'video/fireworks_targ.mp4',x:3,y:36,w:260,h:181,at:1.0}]; // the grand finale, centred on SCREEN CLEAR!, and the last to fizzle out
 for(const o of FW){const v=document.createElement('video');v.muted=true;v.defaultMuted=true;v.playsInline=true;
   v.setAttribute('muted','');v.setAttribute('playsinline','');v.setAttribute('webkit-playsinline','');v.preload='auto';
   v.style.cssText='position:absolute;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none';document.body.appendChild(v);o.v=v;
@@ -806,6 +814,7 @@ function spectarCheck(){
 // The Game Over sound normally starts at the final crash; this only plays it if that crash wasn't caught.
 let endShown=false,finalCrash=-1e9,frameNo=0;
 function gameOverCheck(){const a=16*32+12,on=m.vram[a]===0x45&&m.vram[a+1]===0x4e&&m.vram[a+2]===0x44;
+  if(on)realGame=false;
   if(on&&!endShown){if(started&&frameNo-finalCrash>60*6){au.sample('gameover','gameover');if(au.has('gameover'))au.endLoopOn(au.audEnd('gameover'));}spectarHeard=false;}endShown=on;}
 
 // ---------- skid: the game itself makes the car brake before it can reverse; play a skid while it does ----------
@@ -834,6 +843,18 @@ function fireCheck(){
   prevFireBtn=btn;prevInPlay=inPlay;
 }
 
+// ---------- earth_ohm: a very quiet background tone, only while a real game is being played ----------
+// It starts from the beginning each time the car comes into play - a new screen, or the same screen again after a car
+// is lost - and stops when the car is lost, the screen is cleared and at Game Over. Hyperspace does not interrupt it.
+// realGame: set when the board appears after START, cleared when the last car is lost, so the attract-mode demo is silent.
+let ohmV=null,realGame=false;
+const ohmOff=()=>{if(ohmV){au.stop(ohmV);ohmV=null;}};
+function ohmCheck(){
+  const play=frozen?(frozen.type==='hyper'&&!!ohmV):(realGame&&started&&alive()&&m.ram[0xb1]>0);
+  if(play&&!ohmV){ohmV=au.repeat('ohm');}else if(!play&&ohmV)ohmOff();
+  if(ohmV&&!au.playing(ohmV))ohmV=null;
+}
+
 // ---------- coin: recorded coin-drop instead of the game's beep ----------
 let prevCoin=0,coinMute=0;
 function coinCheck(){
@@ -848,7 +869,7 @@ function introCheck(){
   const st=I.start1||I.start2,inGame=boardUp()&&m.ram[0xc1]>0;
   if(st&&!prevStart){au.endLoopOff();if(!inGame)introArmed=true;} // START ends the after-game loop; pressed while no game is running, it arms the intro
   prevStart=st;
-  if(introArmed&&inGame&&alive()){introArmed=false;const v=au.pri('alarm');introIn=v?Math.max(1,Math.round(au.dur('alarm')*60)):1;} // alarm ...
+  if(introArmed&&inGame&&alive()){introArmed=false;realGame=true;clearsThisGame=0;const v=au.pri('alarm');introIn=v?Math.max(1,Math.round(au.dur('alarm')*60)):1;} // alarm ...
   if(introIn&&--introIn===0)au.pri('intruder'); // ... then the announcement as soon as the alarm ends
 }
 // ---------- bonus screen (EXTRA POINTS / BONUS, shown by the game after each cleared screen) ----------
@@ -856,12 +877,13 @@ function introCheck(){
 // so it is held still until the sound has nearly played out.
 // The screen also shows the new enemy value; the game can only print one digit of it, so from 100 points up
 // the two digits are written here.
-const BONUS_GAME_FRAMES=130;let bonusUp=false,bonusV=null,gjV=null,bonusHoldIn=0;
+const BONUS_GAME_FRAMES=130;let clearsThisGame=0,bonusUp=false,bonusV=null,gjV=null,bonusHoldIn=0;
 const bonusScreen=()=>!boardUp()&&m.vram[10*32+11]===0x45&&m.vram[10*32+12]===0x58&&m.vram[16*32+14]===0x42&&m.vram[16*32+15]===0x4f;
 function bonusScreenCheck(){
   const up=bonusScreen();
   if(up&&!bonusUp&&started){bonusV=au.sample('bonus');let d=au.dur('bonus');
-    gjV=bonusV?au.sample('goodjob',null,d/2):null;if(gjV)d=Math.max(d,d/2+au.dur('goodjob')); // "Good Job" joins in halfway through the fanfare
+    const gk=clearsThisGame++===0?'goodjob':Math.random()<GOOD_JOB_ODDS?'goodjob2':null;
+    gjV=bonusV&&gk?au.sample(gk,null,d/2):null;if(gjV)d=Math.max(d,d/2+au.dur(gk));// "Good Job" joins in halfway through the fanfare
     if(bonusV&&d>0){bonusHoldIn=12;bonusUp=true;bonusLen=Math.max(0,Math.round(d*60)-BONUS_GAME_FRAMES);}}
   if(up){const v=m.ram[0xc3];if(v>=0x10&&m.vram[19*32+14]===0x30){m.vram[19*32+12]=0x30|(v>>4);m.vram[19*32+13]=0x30|(v&15);}}
   if(up&&bonusHoldIn&&--bonusHoldIn===0&&bonusLen>0)frozen={type:'hold',f:0,dur:bonusLen,arm:false};
@@ -875,7 +897,7 @@ let paused=false,last=performance.now(),acc=0;
 const BOOM=[[8,8],[9,9],[10,8],[11,9],[12,8],[13,30]]; // the game's explosion: [picture, frames], measured from the game itself
 function step(){
   if(cd>0)cd--;
-  freeDuck();
+  freeDuck();ohmCheck();
   if(frozen){fireOff();au.frame([],FCYC);if(frozen.type==='hyper')hyperTick(frozen);
     else if(frozen.type==='death'){const z=frozen; // car destroyed: board held still until the crash sound has finished ...
       // ... while the car's explosion still plays out, with the game's own pictures (8-13) at the game's own pace
@@ -893,7 +915,7 @@ function step(){
   // Game Over sound at the wrong moments.) $C1 still counts the car just lost, so 1 = last car.
   const pc=m.mol&15;
   if(started&&wasAlive&&boardUp()&&pc>=8&&pc<=13){
-    const last=m.ram[0xc1]===1;if(last)finalCrash=frameNo;au.playerDeath(last);
+    const last=m.ram[0xc1]===1;if(last){finalCrash=frameNo;realGame=false;}ohmOff();au.playerDeath(last);
     fireOff();if(!last&&au.has('crash')){frozen={type:'death',f:0,dur:Math.max(1,Math.round(au.dur('crash')*60)),pc0:pc};au.hold=true;}}
   // after the freeze the game runs its explosion (8-13) once more: the car stays hidden until it has, so it is only seen once
   if(m.hideBoom&&(!boardUp()||(m.mol&15)<8||(m.mol&15)>13))m.hideBoom=false;
