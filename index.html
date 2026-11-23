@@ -334,7 +334,7 @@ function TargAudio(){
   let deathMute=0;A.playerDeath=last=>{
     if(last){deathMute=tick+Math.round(sr*4);A.sample('gameover','gameover');if(A.has('gameover'))A.endLoopOn(A.audEnd('gameover'));return;}
     const v=A.sample('crash','crash');if(v){v.pri=true;v.solo=true;} // the crash plays alone: every other game sound is silent until it ends
-    {const ok=A.taunts.filter(t=>A.has(t));if(ok.length&&Math.random()<A.tauntOdds){let i;do{i=Math.floor(Math.random()*ok.length);}while(ok.length>1&&ok[i]===A.lastTaunt);A.lastTaunt=ok[i];
+    {const ok=A.taunts.filter(t=>A.has(t));if(ok.length&&!(endLoop&&voices.includes(endLoop))&&Math.random()<A.tauntOdds){ /* never while the after-game ASMR loop plays (attract mode) */let i;do{i=Math.floor(Math.random()*ok.length);}while(ok.length>1&&ok[i]===A.lastTaunt);A.lastTaunt=ok[i];
       const tv=A.sample(ok[i],null,A.dur('crash')+A.tauntGap);if(tv)tv.pri=true;}} // ... sometimes followed by a robot taunt
     deathMute=tick+Math.round(sr*(A.dur('crash')+2.5));}; // ... and the game's own explosion noises stay quiet after the freeze too
   A.muteSpec=sec=>{specMute=tick+Math.round(sec*sr);};
