@@ -686,7 +686,7 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
 // car from above with its FRONT TO THE RIGHT and the artwork reaching the edges of its square.
 // The wheels turn with the distance the car actually drives, not with time: slower car, slower wheels; car
 // stopped (at a corner, or frozen), wheels stopped. The game moves the car 0-2 px a frame, about 1.1 on average.
-const TIRE_CYCLE_PX=13;       // game pixels driven for one full cycle of the frames: 13 = a new frame about every 50 ms at the usual speed
+const TIRE_CYCLE_PX=12;       // game pixels driven for one full turn through the car's frames (6 frames: a new one every 2 px)
 let carDist=0,carLX=-1,carLY=-1;
 function carRoll(){ // called once per game frame: adds up how far the car has driven
   const x=m.ram[0x1c],y=m.ram[0x1d];
