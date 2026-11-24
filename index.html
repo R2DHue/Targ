@@ -633,7 +633,7 @@ const ENEMY_EMPTY={0x00:1,0x09:1,0x11:1,0x18:1}; // the cell of a pair that is e
 // square frames side by side (as many as its width divided by its height) which are shown in turn, left to right,
 // over and over. The empty margin around the artwork is trimmed off here (the same amount from every frame, so the
 // frames stay lined up) and what is left is stretched to the enemy's 8x8 square.
-const ENEMY_FRAME_MS=140;   // how long each frame is shown, in milliseconds (8 frames x 140 = one pulse every 1.12 s)
+const ENEMY_FRAME_MS=70;    // how long each frame is shown, in milliseconds (14 frames x 70 = one blink every 0.98 s)
 let animT=0,animLast=0;     // animation clock shared by the enemies and the car: real time, stopped while paused
 const enemyImg=new Image();let enemySpr=null,enemyOK=false,enemySrc=[],enemyN=0;
 enemyImg.onload=()=>{const W=enemyImg.naturalWidth,H=enemyImg.naturalHeight;if(!W||!H)return;
