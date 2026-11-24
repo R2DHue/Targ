@@ -212,7 +212,7 @@ function TargMachine(roms){ // roms: {prog: Uint8Array(0x2800) for 0x1800-0x3fff
   m.render=(img)=>{ // img: Uint32Array 256*256 ABGR
     const pal=m.palette.map(([r,g,b])=>0xff000000|(b<<16)|(g<<8)|r);
     for(let ty=0;ty<32;ty++)for(let tx=0;tx<32;tx++){
-      const code=vram[ty*32+tx], col=pal[6-(code>>6)], bg=pal[7], blank=m.hiEnemies&&code<0x20;
+      const code=vram[ty*32+tx], col=pal[6-(code>>6)], bg=pal[7], blank=(m.hiEnemies&&code<0x20)||(m.hiSpec&&code>=0xc0&&code<0xe0);
       for(let r=0;r<8;r++){const bits=blank?0:cram[code*8+r];let o=(ty*8+r)*256+tx*8;
         for(let b=0;b<8;b++)img[o+b]=(bits&(0x80>>b))?col:bg;}
     }
@@ -659,7 +659,7 @@ function buildEnemySprites(){ // [direction: up, down, right, left][frame] at ex
 let fitTick=0;
 function fitFx(){ // keep the overlay at (about) one canvas pixel per real screen pixel, so the artwork is as sharp as the display allows
   const want=Math.max(3,Math.min(6,Math.ceil(fxc.getBoundingClientRect().width*(window.devicePixelRatio||1)/240-0.02)));
-  if(want!==FXS||fxc.width!==240*want){FXS=want;fxc.width=240*FXS;fxc.height=256*FXS;enemySpr=null;carSpr=null;missSpr={};}
+  if(want!==FXS||fxc.width!==240*want){FXS=want;fxc.width=240*FXS;fxc.height=256*FXS;enemySpr=null;carSpr=null;missSpr={};specSpr=null;}
 }
 function enemiesReady(){
   if(!enemyOK)return false;
@@ -675,6 +675,63 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
     if(d===1)y=(r-odd)*8+2*k;else if(d===0)y=(r-odd)*8+8-2*k;else if(d===2)x=(c-odd)*8+2*k;else x=(c-odd)*8+8-2*k;
     const key=d|(x<<2)|(y<<13);if(seen.has(key))continue;seen.add(key); // both cells of a pair give the same position: draw once
     fx.drawImage(enemySpr[d][fr],(x-8)*FXS,y*FXS);} // the picture is shown 8 pixels to the left of its buffer (see putImageData below)
+}
+
+// ---------- the Spectar as a creature (creature.png), and its blood burst ----------
+// Display only: the game still moves the Spectar, decides what hits it and scores it. Like the enemies, it is drawn
+// with characters ($C0-$DF): 8x8 pictures for each way it can face, each shifted 2 pixels at a time across two cells.
+// Its exact position is read straight from the lit pixels of those cells, and the creature is painted over the same
+// 8x8 square, turned to face the way it is moving. If creature.png is missing, or the game ever loads different shapes
+// into those characters, the original blocky Spectar is shown instead.
+// creature.png: a strip of square frames side by side, the creature seen from the side with its FRONT (the eye)
+// TO THE LEFT. Left: as drawn; right: mirrored (so it stays upright); up and down: turned a quarter.
+const SPEC_SIG=[[0xC1,[0x18,0x24,0x24,0x18,0x2C,0x76,0xBD,0x81]],[0xD0,[0xC0,0x20,0x76,0x69,0x59,0x76,0x20,0xC0]]];
+const CREATURE_FRAME_MS=60;   // how long each frame is shown (16 frames x 60 = one stride every 0.96 s)
+const specImg=new Image();let specOK=false,specN=0,specSpr=null,specPos=null,specFace=0; // face: 0 left, 1 right, 2 up, 3 down
+specImg.onload=()=>{const w=specImg.naturalWidth,h=specImg.naturalHeight;if(!w||!h)return;specN=Math.max(1,Math.round(w/h));specOK=true;specSpr=null;};
+specImg.src='creature.png';
+function buildSpecSprites(){
+  const S=8*FXS,fw=specImg.naturalWidth/specN,fh=specImg.naturalHeight,frames=[];
+  for(let f=0;f<specN;f++){let src=document.createElement('canvas'),w=Math.round(fh);src.width=src.height=w;src.getContext('2d').drawImage(specImg,f*fw,0,fw,fh,0,0,w,w);
+    while(w>=S*2){const h=document.createElement('canvas');h.width=h.height=w>>1;const g=h.getContext('2d');g.imageSmoothingEnabled=true;g.drawImage(src,0,0,w>>1,w>>1);src=h;w>>=1;}
+    frames.push(src);}
+  specSpr=[[0,1],[0,-1],[Math.PI/2,1],[-Math.PI/2,1]].map(([a,sx])=>frames.map(src=>{const c=document.createElement('canvas');c.width=c.height=S;const g=c.getContext('2d');
+    g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.translate(S/2,S/2);g.rotate(a);g.scale(sx,1);g.drawImage(src,-S/2,-S/2,S,S);return c;}));
+}
+function specReady(){
+  if(!specOK)return false;
+  for(const [code,g] of SPEC_SIG)for(let r=0;r<8;r++)if(m.cram[code*8+r]!==g[r])return false;
+  return true;
+}
+function specFind(){ // the Spectar's 8x8 square on the board (in board pixels), or null; also which way it is heading
+  const v=m.vram,cr=m.cram;let x0=999,y0=999,x1=-1,y1=-1;
+  for(let i=0;i<1024;i++){const t=v[i];if(t<0xc0||t>=0xe0)continue;const r=i>>5,c=i&31;
+    for(let row=0;row<8;row++){const b=cr[t*8+row];if(!b)continue;const y=r*8+row;if(y<y0)y0=y;if(y>y1)y1=y;
+      for(let k=0;k<8;k++)if(b&(0x80>>k)){const x=c*8+k;if(x<x0)x0=x;if(x>x1)x1=x;}}}
+  if(x1<0||x1-x0>8||y1-y0>8){specPos=null;return;}
+  const p={x:x0,y:y0};
+  if(specPos){const dx=p.x-specPos.x,dy=p.y-specPos.y;if(Math.abs(dx)>Math.abs(dy))specFace=dx<0?0:1;else if(dy)specFace=dy<0?2:3;}
+  specPos=p;
+}
+function drawSpectar(){
+  if(!specPos)return;if(!specSpr)buildSpecSprites();
+  fx.drawImage(specSpr[specFace][((animT/CREATURE_FRAME_MS)|0)%specN],(specPos.x-8)*FXS,specPos.y*FXS);
+}
+// When the Spectar is shot it bursts: hundreds of drops of blood fly out in every direction, far enough to cross the
+// whole board, darkening and fading as they go (after the player's-ship explosion in Defender).
+const BLOOD_DROPS=650,BLOOD_LIFE=2000; // drops, and how long the burst lasts in milliseconds
+let blood=null;
+function bloodBurst(x,y){const d=[];
+  for(let i=0;i<BLOOD_DROPS;i++){const a=Math.random()*Math.PI*2,sp=30+250*Math.sqrt(Math.random()); // board pixels per second: most drops fly fast, so the cloud keeps spreading
+    d.push({a:Math.cos(a)*sp,b:Math.sin(a)*sp,s:Math.random()<0.2?3:2,h:Math.random()});}
+  blood={x,y,t0:animT,d};}
+function drawBlood(){ // with the overlay scaled to board pixels
+  if(!blood)return;const t=(animT-blood.t0)/1000;if(t>BLOOD_LIFE/1000){blood=null;return;}
+  const fade=Math.min(1,Math.max(0,(BLOOD_LIFE/1000-t)/0.7)),drag=1-Math.exp(-t*0.7); // drops slow down a little as they fly
+  if(t<0.15){fx.fillStyle=`rgba(255,40,40,${(1-t/0.15)*0.8})`;fx.beginPath();fx.arc(blood.x,blood.y,3+t*40,0,Math.PI*2);fx.fill();} // first splash
+  for(const p of blood.d){const k=drag/0.7;const x=blood.x+p.a*k,y=blood.y+p.b*k;if(x<-2||x>242||y<-2||y>258)continue;
+    const age=Math.min(1,t/1.6+p.h*0.2),r=Math.round(255-70*age),g=Math.round(70-65*age);   // bright blood red, darkening to crimson
+    fx.fillStyle=`rgba(${r},${g},${Math.round(g*0.8)},${fade})`;fx.fillRect(Math.round(x-p.s/2),Math.round(y-p.s/2),p.s,p.s);}
 }
 
 // ---------- animated player car ----------
@@ -735,9 +792,11 @@ function drawFx(){
   {const now=performance.now();if(!paused&&!(frozen&&frozen.type==='death'))animT+=Math.min(100,now-animLast);animLast=now;} // animation clock: real time, so it runs at the same speed on 60 Hz and 120 Hz screens, and stops while paused
   fx.setTransform(1,0,0,1,0,0);fx.clearRect(0,0,fxc.width,fxc.height);
   if(m.hiEnemies)drawEnemies();
+  if(m.hiSpec)drawSpectar();
   drawMissiles();
   if(m.hiCar)drawCar();
   fx.setTransform(FXS,0,0,FXS,0,0);
+  drawBlood();
   if(!frozen)return;const z=frozen;
   if(z.type==='hyper'){
     fx.globalCompositeOperation='lighter';
@@ -920,6 +979,7 @@ function step(){
   const wasAlive=alive(),a8=m.ram[0xa8];f0=m.cpu.cycles;m.frame();
   frameNo++;
   au.specKill=((m.ram[0xa8]-a8)&255)===1; // the game adds 1 to $A8 when a Spectar is shot (and only then)
+  {const was=specPos;specFind();if(au.specKill){const p=was||specPos;if(p)bloodBurst(p.x-8+4,p.y+4);}} // blood bursts from where the creature was
   // Car hit by an enemy: the game switches the car to its explosion pictures, 8-13. (It also briefly shows picture 14,
   // a blank, while a cleared board changes over - that used to be mistaken for a death and played the crash or the
   // Game Over sound at the wrong moments.) $C1 still counts the car just lost, so 1 = last car.
@@ -938,7 +998,7 @@ function step(){
 function loop(t){acc+=Math.min(100,t-last);last=t;
   if(!paused)while(acc>=1000/60){step();acc-=1000/60;} else acc=0;
   m.extra=ghosts.map(g=>[g.code,g.x,g.y,g.col,g.art]);
-  m.hiEnemies=enemiesReady();m.hiCar=carReady();
+  m.hiEnemies=enemiesReady();m.hiCar=carReady();m.hiSpec=specReady();
   m.render(buf);if(frozen&&frozen.type==='hyper'){rippleWarp(buf,wbuf,frozen.f);ctx.putImageData(wid,-8,0);}else ctx.putImageData(id,-8,0);
   try{drawFx();}catch(e){console.error(e);} // a fault while painting the overlay must never stop the game itself
   updHyperUI();requestAnimationFrame(loop);}
