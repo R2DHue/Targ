@@ -631,26 +631,33 @@ const ENEMY_SIG=[[0x08,[0xC3,0xE7,0x7E,0x7E,0x3C,0x3C,0x18,0x18]],[0x10,[0xC0,0x
 const ENEMY_EMPTY={0x00:1,0x09:1,0x11:1,0x18:1}; // the cell of a pair that is empty when the enemy sits squarely in the other
 // enemy.png is drawn pointing down on a transparent background, at any size. It can be one picture, or a strip of
 // square frames side by side (as many as its width divided by its height) which are shown in turn, left to right,
-// over and over. The empty margin around the artwork is trimmed off here (the same amount from every frame, so the
-// frames stay lined up) and what is left is stretched to the enemy's 8x8 square.
-const ENEMY_FRAME_MS=70;    // how long each frame is shown, in milliseconds (14 frames x 70 = one blink every 0.98 s)
+// over and over. The empty margin around the FIRST frame's artwork is trimmed off here and what is left is stretched to
+// the enemy's 8x8 square; every frame is cut with that same box, so the frames stay lined up. A later frame may reach
+// past that box (a flash, a glow): that part is drawn past the enemy's square, up to ENEMY_MAX_REACH of the enemy's
+// size on each side. Display only: what the enemy collides with is still the game's own 8x8 square.
+const ENEMY_FRAME_MS=70;    // how long each frame is shown, in milliseconds (15 frames x 70 = one strobe every 1.05 s)
+const ENEMY_MAX_REACH=0.5;  // how far a frame may reach past the enemy's square, as a fraction of its size
 let animT=0,animLast=0;     // animation clock shared by the enemies and the car: real time, stopped while paused
-const enemyImg=new Image();let enemySpr=null,enemyOK=false,enemySrc=[],enemyN=0;
+const enemyImg=new Image();let enemySpr=null,enemyOK=false,enemySrc=[],enemyN=0,enemyPad=0;
 enemyImg.onload=()=>{const W=enemyImg.naturalWidth,H=enemyImg.naturalHeight;if(!W||!H)return;
-  const N=Math.max(1,Math.round(W/H)),fw=W/N,srcs=[];let box=[0,0,fw,H];
+  const N=Math.max(1,Math.round(W/H)),fw=W/N,srcs=[];let box=[0,0,fw,H],pad=0;
   try{const k=Math.min(1,768/Math.max(fw,H)),w=Math.max(1,Math.round(fw*k)),h=Math.max(1,Math.round(H*k));
-    const t=document.createElement('canvas');t.width=w;t.height=h;const tg=t.getContext('2d',{willReadFrequently:true});let x0=w,x1=-1,y0=h,y1=-1;
-    for(let f=0;f<N;f++){tg.clearRect(0,0,w,h);tg.drawImage(enemyImg,f*fw,0,fw,H,0,0,w,h);const d=tg.getImageData(0,0,w,h).data;
-      for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(d[(y*w+x)*4+3]>24){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}}
-    if(x1<0)return; // completely transparent picture: keep the blocky enemies
-    box=[x0/k,y0/k,(x1-x0+1)/k,(y1-y0+1)/k];
+    const t=document.createElement('canvas');t.width=w;t.height=h;const tg=t.getContext('2d',{willReadFrequently:true});let b0=null,ax0=w,ax1=-1,ay0=h,ay1=-1;
+    for(let f=0;f<N;f++){tg.clearRect(0,0,w,h);tg.drawImage(enemyImg,f*fw,0,fw,H,0,0,w,h);const d=tg.getImageData(0,0,w,h).data;let x0=w,x1=-1,y0=h,y1=-1;
+      for(let y=0;y<h;y++)for(let x=0;x<w;x++){const a=d[(y*w+x)*4+3];if(a>24){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+        if(a>3){if(x<ax0)ax0=x;if(x>ax1)ax1=x;if(y<ay0)ay0=y;if(y>ay1)ay1=y;}} // the reach counts faint glow too, so it is never cut off
+      if(f===0&&x1>=0)b0=[x0,x1,y0,y1];}
+    if(!b0)return; // first frame completely transparent: keep the blocky enemies
+    const [x0,x1,y0,y1]=b0,bw=x1-x0+1,bh=y1-y0+1;box=[x0/k,y0/k,bw/k,bh/k];
+    pad=Math.max(0,(x0-ax0)/bw,(ax1-x1)/bw,(y0-ay0)/bh,(ay1-y1)/bh); // how far the other frames reach past the first one
+    pad=Math.min(pad,ENEMY_MAX_REACH,x0/bw,(w-1-x1)/bw,y0/bh,(h-1-y1)/bh); // never past the edge of a frame (into its neighbour)
   }catch(e){}
   for(let f=0;f<N;f++){const c=document.createElement('canvas');c.width=c.height=512;const g=c.getContext('2d');g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
-    g.drawImage(enemyImg,f*fw+box[0],box[1],box[2],box[3],0,0,512,512);srcs.push(c);}
-  enemySrc=srcs;enemyN=N;enemyOK=true;enemySpr=null;};
+    g.drawImage(enemyImg,f*fw+box[0]-pad*box[2],box[1]-pad*box[3],box[2]*(1+2*pad),box[3]*(1+2*pad),0,0,512,512);srcs.push(c);}
+  enemySrc=srcs;enemyN=N;enemyPad=pad;enemyOK=true;enemySpr=null;};
 enemyImg.src='enemy.png';
-function buildEnemySprites(){ // [direction: up, down, right, left][frame] at exactly 8 game pixels = 8*FXS screen pixels
-  const S=8*FXS,small=enemySrc.map(src0=>{let src=src0,w=512;
+function buildEnemySprites(){ // [direction: up, down, right, left][frame]: the enemy at exactly 8 game pixels = 8*FXS screen pixels, plus any reach
+  const S=8*FXS+2*Math.round(8*FXS*enemyPad),small=enemySrc.map(src0=>{let src=src0,w=512;
     while(w>=S*2){const h=document.createElement('canvas');h.width=h.height=w>>1;const g=h.getContext('2d');g.imageSmoothingEnabled=true;g.drawImage(src,0,0,w>>1,w>>1);src=h;w>>=1;} // halve step by step for a clean reduction
     return src;});
   enemySpr=[Math.PI,0,-Math.PI/2,Math.PI/2].map(a=>small.map(src=>{const c=document.createElement('canvas');c.width=c.height=S;const g=c.getContext('2d');
@@ -674,7 +681,7 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
     const r=i>>5,c=i&31,d=t>>3,k=(t>>1)&3,odd=t&1;let x=c*8,y=r*8;
     if(d===1)y=(r-odd)*8+2*k;else if(d===0)y=(r-odd)*8+8-2*k;else if(d===2)x=(c-odd)*8+2*k;else x=(c-odd)*8+8-2*k;
     const key=d|(x<<2)|(y<<13);if(seen.has(key))continue;seen.add(key); // both cells of a pair give the same position: draw once
-    fx.drawImage(enemySpr[d][fr],(x-8)*FXS,y*FXS);} // the picture is shown 8 pixels to the left of its buffer (see putImageData below)
+    const o=(enemySpr[d][fr].width-8*FXS)/2;fx.drawImage(enemySpr[d][fr],(x-8)*FXS-o,y*FXS-o);} // the picture is shown 8 pixels to the left of its buffer (see putImageData below)
 }
 
 // ---------- the Spectar as a creature (creature.png), and its blood burst ----------
