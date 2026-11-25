@@ -315,11 +315,14 @@ function TargAudio(){
   A.playing=vo=>!!vo&&voices.includes(vo);
   // where a recorded sound becomes inaudible (below about -50 dB), in seconds: used to line sounds up end to end
   A.audEnd=k=>{const s=S[k];if(!s||!s.data)return 0;if(s.end==null){const d=s.data,e=s.dataR;let j=d.length-1;while(j>0&&Math.abs(d[j])<98&&Math.abs(e[j])<98)j--;s.end=(j+1)/sr;}return s.end;};
+  // where a recorded sound first becomes audible (above about -50 dB), in seconds, less 5 ms so its attack is kept whole
+  A.audStart=k=>{const s=S[k];if(!s||!s.data)return 0;if(s.start==null){const d=s.data,e=s.dataR;let j=0;while(j<d.length-1&&Math.abs(d[j])<98&&Math.abs(e[j])<98)j++;s.start=Math.max(0,j/sr-0.005);}return s.start;};
   // a recorded sound played through to its natural end, and started again from the top as long as vo.held is true
-  // (the silence after its last audible sound is skipped, so a repeat follows straight on)
-  A.repeat=(k,delay)=>{if(!ctx)return null;const s=S[k];if(!s||!s.data)return null;const d=s.data,dR=s.dataR,g=s.gain/32767,E=Math.max(1,Math.min(d.length,Math.round(A.audEnd(k)*sr)+Math.round(0.01*sr)));let i=-Math.round((delay||0)*sr);
+  // (the silence after its last audible sound is skipped, so a repeat follows straight on; with skipLead, so is the
+  // silence before its first, so it also starts the moment it is asked for)
+  A.repeat=(k,delay,skipLead)=>{if(!ctx)return null;const s=S[k];if(!s||!s.data)return null;const d=s.data,dR=s.dataR,g=s.gain/32767,E=Math.max(1,Math.min(d.length,Math.round(A.audEnd(k)*sr)+Math.round(0.01*sr))),B=skipLead?Math.min(E-1,Math.round(A.audStart(k)*sr)):0;let i=delay?-Math.round(delay*sr):B;
     const vo={t:0,dry:1,clean:true,amp:1,g:1,held:true,st:true};
-    vo.f=()=>{if(i<0){i++;vo.r=0;return 0;}if(i>=E){if(!vo.held)return null;i=0;}vo.g+=(vo.amp-vo.g)*0.0015;const a=g*vo.g;vo.r=dR[i]*a;return d[i++]*a;};
+    vo.f=()=>{if(i<0){if(++i===0)i=B;vo.r=0;return 0;}if(i>=E){if(!vo.held)return null;i=B;}vo.g+=(vo.amp-vo.g)*0.0015;const a=g*vo.g;vo.r=dR[i]*a;return d[i++]*a;};
     voices.push(vo);return vo;};
   A.dur=k=>S[k]&&S[k].data?S[k].data.length/sr:0; // length of a recorded sound in seconds (0 if not loaded)
   A.stop=vo=>{if(!vo||vo.fade)return;vo.fade=true;const f=vo.f;let g=1;vo.f=t=>{g-=1/(sr*0.08);if(g<=0)return null;const s=f(t);vo.sg=g;return s===null?null:s*g;};}; // vo.sg: the fade, applied to the right side in the mixer
@@ -354,7 +357,7 @@ function TargAudio(){
     if((a&1)===0){const r=v&~s0,f=s0&~v;
       if(r&2){if(t-lastShoot>0.05&&!A.has('fire')){A.play('shoot');}lastShoot=t;}
       // CRASH+LONG rising together = an enemy destroyed (player deaths raise LONG first, then CRASH)
-      if(tick>=deathMute){if((r&0x60)===0x60){if(A.specKill&&A.has('screech'))A.sample('screech'); /* the creature's death screech, on top of the kill sound */ if(A.specKill&&A.has('speckill'))A.sample('speckill');else A.sample('kill','crash');} else{if(r&0x20)A.play('crash'); if(r&0x40)A.play('long');}} if(r&0x08)A.play('warn');
+      if(tick>=deathMute){if((r&0x60)===0x60){if(A.specKill&&A.has('screech'))A.sample('screech'); /* the creature's death screech (Kill_Spactar.m4a is no longer played) */ else A.sample('kill','crash');} else{if(r&0x20)A.play('crash'); if(r&0x40)A.play('long');}} if(r&0x08)A.play('warn');
       if(f&0x80)u2a=0; spec=!(v&0x10)&&!!(v&0x80); mus=v&1; s0=v;}
     else{ if((v&1)&&!(s1&1)&&(s0&0x80))u2a=(u2a+1)&15; s1=v; }
   }
@@ -405,7 +408,7 @@ const TAUNTS=[['we_got_you_REVERB.mp3',0.32],['collision_detected.mp3',0.33],['h
 au.taunts=TAUNTS.map(t=>t[0]);au.tauntOdds=TAUNT_ODDS;au.tauntGap=TAUNT_GAP;
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/car_dies.m4a','sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('speckill','sounds/Kill_Spactar.m4a',0.8);au.load('screech','sounds/alien_screech.wav',1.0);/* 1.0: about as loud as Kill_Spactar at 0.8 */au.load('fire','sounds/gun.wav',0.28);/* 0.28: +6 dB (twice the level) over 0.14, which matched the previous shoot sounds and sat too far in the background */au.load('asmr','sounds/Targ_ASMR.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.load('fwboom','sounds/fireworks_audio_only.m4a',0.5);au.load('ohm','sounds/earth_ohm.m4a',0.63);/* 0.63 = +10 dB over 0.2, heard as about twice as loud */for(const [f,g] of TAUNTS)au.load(f,'sounds/'+f,g);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/car_dies.m4a','sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('screech','sounds/alien_screech.wav',2.0);/* 2.0: a touch louder (+0.6 dB) than the free-man sound, measured through the output's soft limiter */au.load('fire','sounds/pewpewnew.wav',0.28);/* 0.28: the same level as gun.wav had (this file is just as loud); the 0.6 s of silence at its start is skipped */au.load('asmr','sounds/Targ_ASMR.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.load('fwboom','sounds/fireworks_audio_only.m4a',0.5);au.load('ohm','sounds/earth_ohm.m4a',0.63);/* 0.63 = +10 dB over 0.2, heard as about twice as loud */for(const [f,g] of TAUNTS)au.load(f,'sounds/'+f,g);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -458,7 +461,7 @@ let ghosts=[],pend=null,prevAct=0,lastMx=0,lastMy=0,gSpeed=2.25,carV=1,headX=0,h
 function moveGhost(g){ // advance one extra missile; returns false when it is spent (hit something / left the board)
   g.acc+=gSpeed;
   while(g.acc>=1){g.acc-=1;g.x+=g.dx;g.y+=g.dy;g.trav++;
-    if(g.x<0||g.x>0xd9||g.y<0||g.y>0xd7)return false;
+    if(g.x<0||g.x>0xd9||g.y<0||g.y>0xd9)return false; // the top lane is at y=0xd8 (the old limit, 0xd7, threw every extra missile away there)
     if(g.trav<4)continue;
     const col=((255-g.x)>>3)-2,row=((255-g.y)>>3)-1;if(row<0||row>31||col<0||col>31)return false;
     const a=row*32+col,t=m.vram[a];
@@ -920,7 +923,7 @@ const fireOff=()=>{if(fireV){au.stop(fireV);fireV=null;}};
 function fireCheck(){
   const btn=!!m.inp.fire,inPlay=started&&alive()&&m.ram[0xb1]>0;
   // a fresh press, or FIRE already held as the car comes (back) into play on a new car or a new screen
-  if(btn&&inPlay&&(!prevFireBtn||!prevInPlay)){fireOff();fireV=au.repeat('fire');}
+  if(btn&&inPlay&&(!prevFireBtn||!prevInPlay)){fireOff();fireV=au.repeat('fire',0,true);} // true: skip any silence at the start of the file, so the sound starts with the press
   if(fireV){if(!inPlay)fireOff();else{fireV.held=btn;if(!au.playing(fireV))fireV=null;}}
   prevFireBtn=btn;prevInPlay=inPlay;
 }
@@ -975,6 +978,7 @@ let bonusLen=0;
 
 // ---------- main loop ----------
 let paused=false,last=performance.now(),acc=0;
+const SPEC_KILL_HOLD=3; // frames (60 a second) the board is held still when a Spectar is shot, on top of the game's own pause: 3 = 50 ms
 const BOOM=[[8,8],[9,9],[10,8],[11,9],[12,8],[13,30]]; // the game's explosion: [picture, frames], measured from the game itself
 function step(){
   if(cd>0)cd--;
@@ -991,7 +995,7 @@ function step(){
   const wasAlive=alive(),a8=m.ram[0xa8];f0=m.cpu.cycles;m.frame();
   frameNo++;
   au.specKill=((m.ram[0xa8]-a8)&255)===1; // the game adds 1 to $A8 when a Spectar is shot (and only then)
-  {const was=specPos;specFind();if(au.specKill){const p=was||specPos;if(p)bloodBurst(p.x-8+4,p.y+4);}} // blood bursts from where the creature was
+  {const was=specPos;specFind();if(au.specKill){const p=was||specPos;if(p)bloodBurst(p.x-8+4,p.y+4);if(!frozen)frozen={type:'hold',f:0,dur:SPEC_KILL_HOLD};}} // blood bursts from where the creature was; the board holds still a moment longer
   // Car hit by an enemy: the game switches the car to its explosion pictures, 8-13. (It also briefly shows picture 14,
   // a blank, while a cleared board changes over - that used to be mistaken for a death and played the crash or the
   // Game Over sound at the wrong moments.) $C1 still counts the car just lost, so 1 = last car.
