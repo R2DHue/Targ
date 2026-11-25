@@ -726,7 +726,12 @@ function drawSpectar(){
 }
 // When the Spectar is shot it bursts: hundreds of drops of blood fly out in every direction, far enough to cross the
 // whole board, darkening and fading as they go (after the player's-ship explosion in Defender).
-const BLOOD_DROPS=650,BLOOD_LIFE=2000; // drops, and how long the burst lasts in milliseconds
+// Each drop flies out at its own steady speed and, on top of that, gets a kick that is spent almost at once: the drops
+// leave about 6.5 times as fast as they end up cruising and lose that extra speed as the cloud grows - 90% of it by
+// BLOOD_SPRAY_MS. After that they keep sailing outward at cruising speed, across the board and off its edges.
+const BLOOD_DROPS=800,BLOOD_LIFE=2000,BLOOD_SPRAY_MS=250; // drops; how long the burst lasts; how long the kick takes (ms)
+const BLOOD_DRAG=Math.LN10/(BLOOD_SPRAY_MS/1000);  // per second: the kick's extra speed falls to 10% at BLOOD_SPRAY_MS
+const BLOOD_KICK=0.3,BLOOD_CRUISE=0.5; // extra distance the kick adds (seconds of the drop's speed); share of that speed kept for cruising
 let blood=null;
 function bloodBurst(x,y){const d=[];
   for(let i=0;i<BLOOD_DROPS;i++){const a=Math.random()*Math.PI*2,sp=30+250*Math.sqrt(Math.random()); // board pixels per second: most drops fly fast, so the cloud keeps spreading
@@ -734,9 +739,9 @@ function bloodBurst(x,y){const d=[];
   blood={x,y,t0:animT,d};}
 function drawBlood(){ // with the overlay scaled to board pixels
   if(!blood)return;const t=(animT-blood.t0)/1000;if(t>BLOOD_LIFE/1000){blood=null;return;}
-  const fade=Math.min(1,Math.max(0,(BLOOD_LIFE/1000-t)/0.7)),drag=1-Math.exp(-t*0.7); // drops slow down a little as they fly
+  const fade=Math.min(1,Math.max(0,(BLOOD_LIFE/1000-t)/0.7)),go=BLOOD_KICK*(1-Math.exp(-t*BLOOD_DRAG))+BLOOD_CRUISE*t; // fast at first, then cruising
   if(t<0.15){fx.fillStyle=`rgba(255,40,40,${(1-t/0.15)*0.8})`;fx.beginPath();fx.arc(blood.x,blood.y,3+t*40,0,Math.PI*2);fx.fill();} // first splash
-  for(const p of blood.d){const k=drag/0.7;const x=blood.x+p.a*k,y=blood.y+p.b*k;if(x<-2||x>242||y<-2||y>258)continue;
+  for(const p of blood.d){const k=go;const x=blood.x+p.a*k,y=blood.y+p.b*k;if(x<-2||x>242||y<-2||y>258)continue;
     const age=Math.min(1,t/1.6+p.h*0.2),r=Math.round(255-70*age),g=Math.round(70-65*age);   // bright blood red, darkening to crimson
     fx.fillStyle=`rgba(${r},${g},${Math.round(g*0.8)},${fade})`;fx.fillRect(Math.round(x-p.s/2),Math.round(y-p.s/2),p.s,p.s);}
 }
