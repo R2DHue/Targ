@@ -697,7 +697,7 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
 // TO THE LEFT. Left: as drawn; right: mirrored (so it stays upright); up and down: turned a quarter.
 const SPEC_SIG=[[0xC1,[0x18,0x24,0x24,0x18,0x2C,0x76,0xBD,0x81]],[0xD0,[0xC0,0x20,0x76,0x69,0x59,0x76,0x20,0xC0]]];
 const CREATURE_FRAME_MS=60;   // how long each frame is shown (16 frames x 60 = one stride every 0.96 s)
-const specImg=new Image();let specOK=false,specN=0,specSpr=null,specPos=null,specFace=0; // face: 0 left, 1 right, 2 up, 3 down
+const specImg=new Image();let specOK=false,specN=0,specSpr=null,specPos=null,specFace=0,specDead=false; // specDead: shot - not drawn until the game takes it off the board // face: 0 left, 1 right, 2 up, 3 down
 specImg.onload=()=>{const w=specImg.naturalWidth,h=specImg.naturalHeight;if(!w||!h)return;specN=Math.max(1,Math.round(w/h));specOK=true;specSpr=null;};
 specImg.src='creature.png';
 function buildSpecSprites(){
@@ -718,36 +718,59 @@ function specFind(){ // the Spectar's 8x8 square on the board (in board pixels),
   for(let i=0;i<1024;i++){const t=v[i];if(t<0xc0||t>=0xe0)continue;const r=i>>5,c=i&31;
     for(let row=0;row<8;row++){const b=cr[t*8+row];if(!b)continue;const y=r*8+row;if(y<y0)y0=y;if(y>y1)y1=y;
       for(let k=0;k<8;k++)if(b&(0x80>>k)){const x=c*8+k;if(x<x0)x0=x;if(x>x1)x1=x;}}}
-  if(x1<0||x1-x0>8||y1-y0>8){specPos=null;return;}
+  if(x1<0||x1-x0>8||y1-y0>8){specPos=null;specDead=false;return;}
   const p={x:x0,y:y0};
+  if(specDead&&specDead!==true&&(Math.abs(p.x-specDead.x)>2||Math.abs(p.y-specDead.y)>2))specDead=false; // a new Spectar elsewhere: draw it again
   if(specPos){const dx=p.x-specPos.x,dy=p.y-specPos.y;if(Math.abs(dx)>Math.abs(dy))specFace=dx<0?0:1;else if(dy)specFace=dy<0?2:3;}
   specPos=p;
 }
 function drawSpectar(){
-  if(!specPos)return;if(!specSpr)buildSpecSprites();
+  if(!specPos||specDead)return;if(!specSpr)buildSpecSprites();
   fx.drawImage(specSpr[specFace][((animT/CREATURE_FRAME_MS)|0)%specN],(specPos.x-8)*FXS,specPos.y*FXS);
 }
 // When the Spectar is shot it bursts: hundreds of drops of blood fly out in every direction, far enough to cross the
 // whole board, darkening and fading as they go (after the player's-ship explosion in Defender).
-// Each drop flies out at its own steady speed and, on top of that, gets a kick that is spent almost at once: the drops
-// leave about 6.5 times as fast as they end up cruising and lose that extra speed as the cloud grows - 90% of it by
-// BLOOD_SPRAY_MS. After that they keep sailing outward at cruising speed, across the board and off its edges.
-const BLOOD_DROPS=800,BLOOD_LIFE=2000,BLOOD_SPRAY_MS=250; // drops; how long the burst lasts; how long the kick takes (ms)
-const BLOOD_DRAG=Math.LN10/(BLOOD_SPRAY_MS/1000);  // per second: the kick's extra speed falls to 10% at BLOOD_SPRAY_MS
-const BLOOD_KICK=0.3,BLOOD_CRUISE=0.5; // extra distance the kick adds (seconds of the drop's speed); share of that speed kept for cruising
-let blood=null;
+// Each drop is fastest the moment it leaves and keeps losing speed the farther it gets: its distance grows as
+// ln(1 + t/BLOOD_TAU), so its speed is cut in half each time it travels another ~70% of its "reach" (A below) - it
+// never quite stops, so the fast drops still sail across the board and off its edges, ever more slowly.
+const BLOOD_DROPS=900,BLOOD_LIFE=2000; // drops, and how long the burst lasts in milliseconds
+const BLOOD_TAU=0.07; // seconds: smaller = a harder, faster first burst that then slows more sharply
+// A few drops fly at the screen instead and hit it like a windshield: they splat, sit a moment, then trickle down
+// the glass and dry up. Only these are see-through, so they never hide the game under them.
+const SPLAT_MIN=3,SPLAT_MAX=6,SPLAT_RUN=15,SPLAT_ALPHA=0.55; // how many land (at random, between the two); how far each runs down, in board pixels; how see-through (0-1)
+let blood=null,splats=[];
 function bloodBurst(x,y){const d=[];
-  for(let i=0;i<BLOOD_DROPS;i++){const a=Math.random()*Math.PI*2,sp=30+250*Math.sqrt(Math.random()); // board pixels per second: most drops fly fast, so the cloud keeps spreading
-    d.push({a:Math.cos(a)*sp,b:Math.sin(a)*sp,s:Math.random()<0.2?3:2,h:Math.random()});}
-  blood={x,y,t0:animT,d};}
+  for(let i=0;i<BLOOD_DROPS;i++){const a=Math.random()*Math.PI*2,A=6+94*Math.sqrt(Math.random()); // reach: most drops fly far
+    d.push({a:Math.cos(a)*A,b:Math.sin(a)*A,s:Math.random()<0.2?3:2,h:Math.random()});}
+  blood={x,y,t0:animT,d};
+  const n=SPLAT_MIN+Math.floor(Math.random()*(SPLAT_MAX-SPLAT_MIN+1));
+  for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,r=20+70*Math.random(); // where along the spray it hits the glass
+    splats.push({x:Math.min(228,Math.max(12,x+Math.cos(a)*r)),y:Math.min(232,Math.max(10,y+Math.sin(a)*r)),
+      t0:animT+80+Math.random()*420,       // lands 0.08-0.5 s into the burst
+      r:2.2+Math.random()*1.4,              // drop size (radius), board pixels
+      wait:0.15+Math.random()*0.25,         // sits this long before it starts to run, seconds
+      run:1.2+Math.random()*0.6,            // then runs down for this long
+      len:SPLAT_RUN*(0.8+Math.random()*0.4)});}}
 function drawBlood(){ // with the overlay scaled to board pixels
   if(!blood)return;const t=(animT-blood.t0)/1000;if(t>BLOOD_LIFE/1000){blood=null;return;}
-  const fade=Math.min(1,Math.max(0,(BLOOD_LIFE/1000-t)/0.7)),go=BLOOD_KICK*(1-Math.exp(-t*BLOOD_DRAG))+BLOOD_CRUISE*t; // fast at first, then cruising
+  const fade=Math.min(1,Math.max(0,(BLOOD_LIFE/1000-t)/0.7)),go=Math.log(1+t/BLOOD_TAU); // fastest at first, slower the farther out
   if(t<0.15){fx.fillStyle=`rgba(255,40,40,${(1-t/0.15)*0.8})`;fx.beginPath();fx.arc(blood.x,blood.y,3+t*40,0,Math.PI*2);fx.fill();} // first splash
-  for(const p of blood.d){const k=go;const x=blood.x+p.a*k,y=blood.y+p.b*k;if(x<-2||x>242||y<-2||y>258)continue;
+  for(const p of blood.d){const x=blood.x+p.a*go,y=blood.y+p.b*go;if(x<-2||x>242||y<-2||y>258)continue;
     const age=Math.min(1,t/1.6+p.h*0.2),r=Math.round(255-70*age),g=Math.round(70-65*age);   // bright blood red, darkening to crimson
     fx.fillStyle=`rgba(${r},${g},${Math.round(g*0.8)},${fade})`;fx.fillRect(Math.round(x-p.s/2),Math.round(y-p.s/2),p.s,p.s);}
 }
+function drawSplats(){ // drops on the "glass", drawn over everything else
+  if(!splats.length)return;
+  splats=splats.filter(q=>(animT-q.t0)/1000<q.wait+q.run+0.35);
+  for(const q of splats){const t=(animT-q.t0)/1000;if(t<0)continue;
+    const grow=Math.min(1,t/0.06),k=t<q.wait?0:Math.min(1,(t-q.wait)/q.run),ease=k*k*(3-2*k); // splat in 60 ms; run: slow start, steady, easing to a stop
+    const end=t-q.wait-q.run,a=SPLAT_ALPHA*(end>0?Math.max(0,1-end/0.35):1);             // dries up over the last 0.35 s
+    const dy=q.len*ease,r=q.r*(0.55+0.45*grow)*(1-0.35*k);                                    // gets smaller as it leaves a trail behind
+    if(dy>0.3){const tw=r*0.55;const gr=fx.createLinearGradient(0,q.y,0,q.y+dy);gr.addColorStop(0,`rgba(150,0,12,0)`);gr.addColorStop(1,`rgba(210,0,25,${a*0.75})`);
+      fx.fillStyle=gr;fx.fillRect(q.x-tw/2,q.y,tw,dy);}                                       // the streak it leaves, fading toward the top
+    fx.fillStyle=`rgba(235,10,30,${a})`;fx.beginPath();fx.ellipse(q.x,q.y+dy,r,r*(1+0.25*k),0,0,Math.PI*2);fx.fill(); // the drop, stretching a little as it runs
+    fx.strokeStyle=`rgba(110,0,10,${a})`;fx.lineWidth=0.5;fx.stroke();                                   // darker rim, so it reads on yellow and on blue
+    fx.fillStyle=`rgba(255,210,210,${a*0.6})`;fx.beginPath();fx.arc(q.x-r*0.35,q.y+dy-r*0.35,r*0.28,0,Math.PI*2);fx.fill();}} // glint
 
 // ---------- animated player car ----------
 // Display only: the game still decides where the car is, which way it faces and what it hits. Its video hardware
@@ -811,7 +834,7 @@ function drawFx(){
   drawMissiles();
   if(m.hiCar)drawCar();
   fx.setTransform(FXS,0,0,FXS,0,0);
-  drawBlood();
+  drawBlood();drawSplats();
   if(!frozen)return;const z=frozen;
   if(z.type==='hyper'){
     fx.globalCompositeOperation='lighter';
@@ -978,7 +1001,7 @@ let bonusLen=0;
 
 // ---------- main loop ----------
 let paused=false,last=performance.now(),acc=0;
-const SPEC_KILL_HOLD=3; // frames (60 a second) the board is held still when a Spectar is shot, on top of the game's own pause: 3 = 50 ms
+const SPEC_KILL_HOLD=23; // frames (60 a second) the board is held still when a Spectar is shot, on top of the game's own pause: 23 = 383 ms
 const BOOM=[[8,8],[9,9],[10,8],[11,9],[12,8],[13,30]]; // the game's explosion: [picture, frames], measured from the game itself
 function step(){
   if(cd>0)cd--;
@@ -995,7 +1018,7 @@ function step(){
   const wasAlive=alive(),a8=m.ram[0xa8];f0=m.cpu.cycles;m.frame();
   frameNo++;
   au.specKill=((m.ram[0xa8]-a8)&255)===1; // the game adds 1 to $A8 when a Spectar is shot (and only then)
-  {const was=specPos;specFind();if(au.specKill){const p=was||specPos;if(p)bloodBurst(p.x-8+4,p.y+4);if(!frozen)frozen={type:'hold',f:0,dur:SPEC_KILL_HOLD};}} // blood bursts from where the creature was; the board holds still a moment longer
+  {const was=specPos;specFind();if(au.specKill){const p=was||specPos;if(p)bloodBurst(p.x-8+4,p.y+4);specDead=p?{x:p.x,y:p.y}:true;if(!frozen)frozen={type:'hold',f:0,dur:SPEC_KILL_HOLD};}} // blood bursts from where the creature was, the creature is gone, and the board holds still a moment longer
   // Car hit by an enemy: the game switches the car to its explosion pictures, 8-13. (It also briefly shows picture 14,
   // a blank, while a cleared board changes over - that used to be mistaken for a death and played the crash or the
   // Game Over sound at the wrong moments.) $C1 still counts the car just lost, so 1 = last car.
