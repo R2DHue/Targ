@@ -426,7 +426,7 @@ const au=new TargAudio();window.au=au;au.create();
 // AB_MATCH: each is set so its loudest moment matches alien_screech.wav's at 2.0, so neither wins just by being louder.
 // Either way, silence at the start is skipped (so both start the instant the creature dies) and a file that ends while
 // still audible gets a 30 ms fade-out instead of a click.
-const SCREECH_AB=['sounds/alien_screech_A.wav','sounds/alien_screech_B.wav'],AB_MATCH=true;
+const SCREECH_AB=['sounds/alien_scream_A.wav','sounds/alien_scream_B.wav'],AB_MATCH=true;
 const TAUNTS=[['we_got_you_REVERB.mp3',0.32],['collision_detected.mp3',0.33],['humanoid_failed.mp3',0.22],['goodbye.m4a',0.82],['always_wins.m4a',0.91],['get_outta_town.m4a',1.04],['go_back_to_earth.m4a',1.08],['better_luck_next_time.m4a',1.0]],TAUNT_ODDS=0.2,TAUNT_GAP=0.5;
 au.taunts=TAUNTS.map(t=>t[0]);au.tauntOdds=TAUNT_ODDS;au.tauntGap=TAUNT_GAP;
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
