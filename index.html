@@ -29,6 +29,8 @@ html,body{margin:0;height:100%;height:100dvh;-webkit-text-size-adjust:100%;backg
 #knob{position:absolute;z-index:2;left:34.5%;top:34.5%;width:31%;height:31%;border-radius:50%;background:radial-gradient(circle at 35% 25%,rgba(255,255,255,.75),rgba(150,150,160,.55));border:1px solid rgba(255,255,255,.7);box-shadow:0 3px 8px #0009}
 .arrow{position:absolute;z-index:1;color:rgba(255,255,255,.7);font-size:min(2.2vw,20px);line-height:1;transform:translate(-50%,-50%)}.arrow.up{left:50%;top:6%}.arrow.down{left:50%;top:94%}.arrow.left{left:6%;top:50%}.arrow.right{left:94%;top:50%}
 .arrow.on{color:#fff}
+.arrow.up:before{content:"\25B2"}.arrow.down:before{content:"\25BC"}.arrow.left:before{content:"\25C0"}.arrow.right:before{content:"\25B6"} /* drawn by CSS, not as text in the page, so iPadOS finds no text to select (and no magnifier loupe) under the stick */
+#dpad,#dpad *,#fire,#fire *,#hyper,#hyper *,.btn{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .btn{position:absolute;top:max(12px,env(safe-area-inset-top));font:700 15px sans-serif;background:#222c;color:#ddd;border:1px solid #666;border-radius:10px;padding:10px 16px}
 #coin{left:max(14px,env(safe-area-inset-left))}#start{left:calc(max(14px,env(safe-area-inset-left)) + 92px)}
 #start2{left:calc(max(14px,env(safe-area-inset-left)) + 205px)}
@@ -66,7 +68,7 @@ html,body{margin:0;height:100%;height:100dvh;-webkit-text-size-adjust:100%;backg
 <canvas id="fx" width="720" height="768"></canvas>
 <div id="fire">FIRE</div>
 <div id="hyper"><span id="hyt">HYPER</span></div>
-<div id="dpad" role="group" aria-label="Four-way joystick"><div id="padZone"></div><div id="stick"><span class="arrow up" id="dup">▲</span><span class="arrow down" id="ddown">▼</span><span class="arrow left" id="dleft">◀</span><span class="arrow right" id="dright">▶</span><div id="knob"></div></div></div>
+<div id="dpad" role="group" aria-label="Four-way joystick"><div id="padZone"></div><div id="stick"><span class="arrow up" id="dup"></span><span class="arrow down" id="ddown"></span><span class="arrow left" id="dleft"></span><span class="arrow right" id="dright"></span><div id="knob"></div></div></div>
 <div id="msg">Loading…</div>
 <script>// Upright screens: size the board to the largest WHOLE multiple of its 240x256 picture, counted in real screen
 // pixels, that fits the width and leaves room for the controls (iPhone 1290x2796: 5x = 1200x1280 px, was ~2.8x).
@@ -312,6 +314,21 @@ function TargAudio(){
     if(s&&!s.failed&&!delay){s.want=performance.now();return null;} // still decoding: play it the moment it is ready
     if(fallback){A.play(fallback);return voices[voices.length-1];}return null;};
   A.has=k=>!!(S[k]&&S[k].data);
+  // loudness of a recorded sound at its loudest moment: the RMS of its loudest 400 ms (so a long tail doesn't count against it)
+  A.loud=k=>{const s=S[k];if(!s||!s.data)return 0;if(s.rms==null){const d=s.data,e=s.dataR,n=d.length,W=Math.min(n,Math.round(0.4*sr));let q=0,mx=0;
+    for(let i=0;i<n;i++){q+=(d[i]*d[i]+e[i]*e[i])/2;if(i>=W){const j=i-W;q-=(d[j]*d[j]+e[j]*e[j])/2;}if(i>=W-1&&q>mx)mx=q;}
+    s.rms=Math.sqrt(mx/W)/32767;}return s.rms;};
+  // ready an A/B screech once: drop the silence before it starts, and fade out its last 30 ms if it is cut off while still audible
+  const abPrep=k=>{const s=S[k];if(s.prepped)return;s.prepped=true;const b=Math.round(A.audStart(k)*sr),same=s.dataR===s.data;
+    if(b>0){s.data=s.data.subarray(b);s.dataR=same?s.data:s.dataR.subarray(b);}
+    const d=s.data,e=s.dataR,n=d.length,F=Math.min(n,Math.round(0.03*sr));let tail=0;for(let i=n-F;i<n;i++)tail=Math.max(tail,Math.abs(d[i]),Math.abs(e[i]));
+    if(tail>=98){const c=new Int16Array(d),cr=same?c:new Int16Array(e);for(let i=0;i<F;i++){const g=1-(i+1)/F,j=n-F+i;c[j]=Math.round(c[j]*g);if(!same)cr[j]=Math.round(cr[j]*g);}s.data=c;s.dataR=cr;}
+    s.start=s.end=s.rms=null;};
+  let abTurn=0;try{abTurn=+localStorage.getItem('targ.screechAB')||0;}catch(e){}
+  A.screechAB=()=>{const k=abTurn%2?'screechB':'screechA';abTurn=(abTurn+1)%2;try{localStorage.setItem('targ.screechAB',abTurn);}catch(e){}
+    const use=A.has(k)?k:A.has('screech')?'screech':null;if(!use)return null;if(use!=='screech')abPrep(use);
+    if(use!=='screech'&&A.abMatch&&!S[use].matched&&A.has('screech')){const l=A.loud(use);if(l>0)S[use].gain=Math.min(8,S.screech.gain*A.loud('screech')/l);S[use].matched=true;}
+    return A.sample(use);};
   A.playing=vo=>!!vo&&voices.includes(vo);
   // where a recorded sound becomes inaudible (below about -50 dB), in seconds: used to line sounds up end to end
   A.audEnd=k=>{const s=S[k];if(!s||!s.data)return 0;if(s.end==null){const d=s.data,e=s.dataR;let j=d.length-1;while(j>0&&Math.abs(d[j])<98&&Math.abs(e[j])<98)j--;s.end=(j+1)/sr;}return s.end;};
@@ -357,7 +374,7 @@ function TargAudio(){
     if((a&1)===0){const r=v&~s0,f=s0&~v;
       if(r&2){if(t-lastShoot>0.05&&!A.has('fire')){A.play('shoot');}lastShoot=t;}
       // CRASH+LONG rising together = an enemy destroyed (player deaths raise LONG first, then CRASH)
-      if(tick>=deathMute){if((r&0x60)===0x60){if(A.specKill&&A.has('screech'))A.sample('screech'); /* the creature's death screech (Kill_Spactar.m4a is no longer played) */ else A.sample('kill','crash');} else{if(r&0x20)A.play('crash'); if(r&0x40)A.play('long');}} if(r&0x08)A.play('warn');
+      if(tick>=deathMute){if((r&0x60)===0x60){if(A.specKill&&A.screechAB()){} /* the creature's death screech, A/B (Kill_Spactar.m4a is no longer played) */ else A.sample('kill','crash');} else{if(r&0x20)A.play('crash'); if(r&0x40)A.play('long');}} if(r&0x08)A.play('warn');
       if(f&0x80)u2a=0; spec=!(v&0x10)&&!!(v&0x80); mus=v&1; s0=v;}
     else{ if((v&1)&&!(s1&1)&&(s0&0x80))u2a=(u2a+1)&15; s1=v; }
   }
@@ -404,13 +421,19 @@ const au=new TargAudio();window.au=au;au.create();
 // robot taunts: when a car is lost and the screen has to be played again, TAUNT_ODDS is the chance (0.2 = 1 in 5) that
 // one of these is heard, picked at random (never the same one twice in a row). It starts TAUNT_GAP s after the crash
 // sound has finished. [file, volume]: the volumes even out the files' different loudness.
+// A/B test of the creature's death screech: kills alternate A, B, A, B... The turn is remembered on the device, so it
+// carries on across games and reloads. If one of the two files is missing, alien_screech.wav plays in its place.
+// AB_MATCH: each is set so its loudest moment matches alien_screech.wav's at 2.0, so neither wins just by being louder.
+// Either way, silence at the start is skipped (so both start the instant the creature dies) and a file that ends while
+// still audible gets a 30 ms fade-out instead of a click.
+const SCREECH_AB=['sounds/alien_screech_A.wav','sounds/alien_screech_B.wav'],AB_MATCH=true;
 const TAUNTS=[['we_got_you_REVERB.mp3',0.32],['collision_detected.mp3',0.33],['humanoid_failed.mp3',0.22],['goodbye.m4a',0.82],['always_wins.m4a',0.91],['get_outta_town.m4a',1.04],['go_back_to_earth.m4a',1.08],['better_luck_next_time.m4a',1.0]],TAUNT_ODDS=0.2,TAUNT_GAP=0.5;
 au.taunts=TAUNTS.map(t=>t[0]);au.tauntOdds=TAUNT_ODDS;au.tauntGap=TAUNT_GAP;
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/car_dies.m4a','sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('screech','sounds/alien_screech.wav',2.0);/* 2.0: a touch louder (+0.6 dB) than the free-man sound, measured through the output's soft limiter */au.load('fire','sounds/pewpewnew.wav',0.28);/* 0.28: the same level as gun.wav had (this file is just as loud); the 0.6 s of silence at its start is skipped */au.load('asmr','sounds/Targ_ASMR.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.load('fwboom','sounds/fireworks_audio_only.m4a',0.5);au.load('ohm','sounds/earth_ohm.m4a',0.63);/* 0.63 = +10 dB over 0.2, heard as about twice as loud */for(const [f,g] of TAUNTS)au.load(f,'sounds/'+f,g);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/car_dies.m4a','sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('screech','sounds/alien_screech.wav',2.0);au.abMatch=AB_MATCH;au.load('screechA',SCREECH_AB[0],2.0);au.load('screechB',SCREECH_AB[1],2.0);/* 2.0: a touch louder (+0.6 dB) than the free-man sound, measured through the output's soft limiter */au.load('fire','sounds/pewpewnewer.wav',0.28);/* 0.28: the level pewpewnew.wav and gun.wav used; any silence at the start of the file is skipped */au.load('asmr','sounds/Targ_ASMR.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.load('fwboom','sounds/fireworks_audio_only.m4a',0.5);au.load('ohm','sounds/earth_ohm.m4a',0.63);/* 0.63 = +10 dB over 0.2, heard as about twice as loud */for(const [f,g] of TAUNTS)au.load(f,'sounds/'+f,g);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
-const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
+const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','pointerup','touchend','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
 const cv=document.getElementById('c'),ctx=cv.getContext('2d'),id=ctx.createImageData(256,256),buf=new Uint32Array(id.data.buffer);
 const fxc=document.getElementById('fx'),fx=fxc.getContext('2d');let FXS=3; // overlay pixels per game pixel (follows the screen, see fitFx)
@@ -1001,7 +1024,7 @@ let bonusLen=0;
 
 // ---------- main loop ----------
 let paused=false,last=performance.now(),acc=0;
-const SPEC_KILL_HOLD=23; // frames (60 a second) the board is held still when a Spectar is shot, on top of the game's own pause: 23 = 383 ms
+const SPEC_KILL_HOLD=32; // frames (60 a second) the board is held still when a Spectar is shot, on top of the game's own pause: 32 = 533 ms (was 23 = 383 ms; +150 ms)
 const BOOM=[[8,8],[9,9],[10,8],[11,9],[12,8],[13,30]]; // the game's explosion: [picture, frames], measured from the game itself
 function step(){
   if(cd>0)cd--;
@@ -1111,7 +1134,13 @@ const touchSweep=e=>{const live=[...e.touches].map(t=>t.target);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(pid!==null)padRel();for(const h of holds){I[h.k]=0;h.touch=false;h.el.classList.remove('on');}}});
 document.addEventListener('visibilitychange',()=>{paused=document.hidden;});
 // Safari: block pinch/double-tap zoom and long-press menus that hijack game touches
-['gesturestart','gesturechange','dblclick','contextmenu'].forEach(t=>document.addEventListener(t,e=>e.preventDefault(),{passive:false}));
+['gesturestart','gesturechange','dblclick','contextmenu','selectstart'].forEach(t=>document.addEventListener(t,e=>e.preventDefault(),{passive:false}));
+// iPadOS: a finger held still on a control can start its long-press text-selection gesture (the magnifier loupe), which
+// then takes the touch away from the stick. Cancelling touchstart on the controls stops that gesture from starting;
+// pointer events have already been sent by then, so the stick and buttons work exactly as before.
+for(const el of [pad,document.getElementById('dpad'),document.getElementById('fire'),hyBtn,...document.querySelectorAll('.btn')])
+  el.addEventListener('touchstart',e=>{if(e.cancelable)e.preventDefault();},{passive:false});
+document.addEventListener('selectionchange',()=>{const g=getSelection();if(g&&g.rangeCount&&!g.isCollapsed)g.removeAllRanges();}); // and if a selection appears anyway, drop it
 document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 }catch(err){msg.textContent='Error: '+err;}
 })();
