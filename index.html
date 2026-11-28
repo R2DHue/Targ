@@ -362,12 +362,25 @@ function TargAudio(){
       const tv=A.sample(ok[i],null,A.dur('crash')+A.tauntGap);if(tv)tv.pri=true;}} // ... sometimes followed by a robot taunt
     deathMute=tick+Math.round(sr*(A.dur('crash')+2.5));}; // ... and the game's own explosion noises stay quiet after the freeze too
   A.muteSpec=sec=>{specMute=tick+Math.round(sec*sr);};
-  A.create=()=>{if(ctx)return;const C=window.AudioContext||window.webkitAudioContext;if(!C)return;try{ctx=new C();}catch(e){return;}sr=ctx.sampleRate;
-    node=ctx.createScriptProcessor(2048,0,2);node.onaudioprocess=e=>{const o=e.outputBuffer.getChannelData(0),oR=e.outputBuffer.getChannelData(1); // stereo out
+  let lastCb=0; // when the audio hardware last asked for sound (performance.now())
+  A.create=rate=>{if(ctx)return;const C=window.AudioContext||window.webkitAudioContext;if(!C)return;
+    try{ctx=rate?new C({sampleRate:rate}):new C();}catch(e){try{ctx=new C();}catch(e2){return;}}sr=ctx.sampleRate;
+    node=ctx.createScriptProcessor(2048,0,2);node.onaudioprocess=e=>{lastCb=performance.now();const o=e.outputBuffer.getChannelData(0),oR=e.outputBuffer.getChannelData(1); // stereo out
       for(let i=0;i<o.length;i++){if(rd!==wr){o[i]=on?RB[rd]:0;oR[i]=on?RBR[rd]:0;rd=(rd+1)&32767;}else{o[i]=0;oR[i]=0;}}};
     node.connect(ctx.destination);for(const k in S)decode(k);};
   let woke=false;
+  // iOS can leave the audio dead after switching apps (most of all after another app, like YouTube, has played
+  // sound): the context stays "interrupted" and ignores resume(), or says "running" but never asks for sound again.
+  // Only a new one works then, so on the first touch after that a fresh context is built. The decoded sounds are
+  // kept, so nothing has to load again, and the game sound carries on where it was.
+  A.dead=()=>!!ctx&&!document.hidden&&woke&&(ctx.state==='closed'||ctx.state==='interrupted'||(lastCb>0&&performance.now()-lastCb>800));
+  A.rebuild=()=>{const old=ctx,oldSr=sr;try{node.onaudioprocess=null;node.disconnect();}catch(e){}try{if(old.close)old.close();}catch(e){}
+    ctx=null;node=null;A.create(oldSr);if(!ctx)return;
+    try{const b=ctx.createBuffer(1,1,22050),sN=ctx.createBufferSource();sN.buffer=b;sN.connect(ctx.destination);sN.start(0);}catch(e){}
+    rd=wr;lastCb=performance.now();if(ctx.state!=='running')ctx.resume();};
+  A.wake=()=>{if(!ctx||document.hidden)return;rd=wr;if(ctx.state!=='running'){try{const r=ctx.resume();if(r&&r.catch)r.catch(()=>{});}catch(e){}}}; // back in the app: try to carry on (no touch needed if iOS allows it)
   A.unlock=()=>{A.create();if(!ctx)return;
+    if(A.dead()){A.rebuild();return;}
     if(!woke){woke=true;const b=ctx.createBuffer(1,1,22050),sN=ctx.createBufferSource();sN.buffer=b;sN.connect(ctx.destination);sN.start(0);
       rd=wr; // drop anything queued while the audio was still asleep, so the first sound is not late
       A.sample('jump');} // the jump-start sound: once, on the very first touch or key (browsers allow no sound before that)
@@ -723,13 +736,14 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
 // creature.png: a strip of square frames side by side, the creature seen from the side with its FRONT (the eye)
 // TO THE LEFT. Left: as drawn; right: mirrored (so it stays upright); up and down: turned a quarter.
 const SPEC_SIG=[[0xC1,[0x18,0x24,0x24,0x18,0x2C,0x76,0xBD,0x81]],[0xD0,[0xC0,0x20,0x76,0x69,0x59,0x76,0x20,0xC0]]];
-const CREATURE_FRAME_MS=40;   // how long each frame is shown (21 frames x 40 = one stride every 0.84 s)
+const CREATURE_FRAME_MS=30;   // how long each frame is shown (21 frames x 30 = one stride every 0.63 s)
 // How big the creature is drawn: the width of one frame of creature.png, in game pixels (the Spectar's own square
 // is 8). The lanes are 10 game pixels between blocks; at 20, this 2:1 creature is 9.7 tall and just fits. Display
 // only: what the car collides with is still the game's own 8x8 Spectar in the middle, so a leg tip reaching
 // past it is harmless - only running into the body and the legs near it is a crash.
 const CREATURE_SIZE=20;
-const specImg=new Image();let specOK=false,specN=0,specSpr=null,specPos=null,specFace=0,specDead=false; // specDead: shot - not drawn until the game takes it off the board // face: 0 left, 1 right, 2 up, 3 down
+const SPEC_GONE=60; // frames the dead Spectar's tiles must be gone before a Spectar back in the same spot counts as a new one (60 = 1 s)
+const specImg=new Image();let specOK=false,specN=0,specSpr=null,specPos=null,specFace=0,specDead=false,specGone=0; // specDead: shot - not drawn until the game takes it off the board (gone for SPEC_GONE frames) or a Spectar turns up somewhere else // face: 0 left, 1 right, 2 up, 3 down
 specImg.onload=()=>{const w=specImg.naturalWidth,h=specImg.naturalHeight;if(!w||!h)return;specN=Math.max(1,Math.round(w/h));specOK=true;specSpr=null;};
 specImg.src='creature.png';
 function buildSpecSprites(){
@@ -750,9 +764,10 @@ function specFind(){ // the Spectar's 8x8 square on the board (in board pixels),
   for(let i=0;i<1024;i++){const t=v[i];if(t<0xc0||t>=0xe0)continue;const r=i>>5,c=i&31;
     for(let row=0;row<8;row++){const b=cr[t*8+row];if(!b)continue;const y=r*8+row;if(y<y0)y0=y;if(y>y1)y1=y;
       for(let k=0;k<8;k++)if(b&(0x80>>k)){const x=c*8+k;if(x<x0)x0=x;if(x>x1)x1=x;}}}
-  if(x1<0||x1-x0>8||y1-y0>8){specPos=null;specDead=false;return;}
+  if(x1<0||x1-x0>8||y1-y0>8){specPos=null;if(specDead&&++specGone>=SPEC_GONE)specDead=false;return;}
+  specGone=0;
   const p={x:x0,y:y0};
-  if(specDead&&specDead!==true&&(Math.abs(p.x-specDead.x)>2||Math.abs(p.y-specDead.y)>2))specDead=false; // a new Spectar elsewhere: draw it again
+  if(specDead&&specDead!==true&&(Math.abs(p.x-specDead.x)>4||Math.abs(p.y-specDead.y)>4))specDead=false; // a new Spectar elsewhere: draw it again (the dead one's leftovers stay put, or shift a pixel or two)
   if(specPos){const dx=p.x-specPos.x,dy=p.y-specPos.y;if(Math.abs(dx)>Math.abs(dy))specFace=dx<0?0:1;else if(dy)specFace=dy<0?2:3;}
   specPos=p;
 }
@@ -770,7 +785,7 @@ const BLOOD_DROPS=900,BLOOD_LIFE=2000; // drops, and how long the burst lasts in
 const BLOOD_TAU=0.07; // seconds: smaller = a harder, faster first burst that then slows more sharply
 // A few drops fly at the screen instead and hit it like a windshield: they splat, sit a moment, then trickle down
 // the glass and dry up. Only these are see-through, so they never hide the game under them.
-const SPLAT_MIN=10,SPLAT_MAX=16,SPLAT_RUN=15,SPLAT_ALPHA=0.55; // how many land (at random, between the two); how far each runs down, in board pixels; how see-through (0-1)
+const SPLAT_MIN=16,SPLAT_MAX=24,SPLAT_RUN=15,SPLAT_ALPHA=0.55; // how many land (at random, between the two); how far each runs down, in board pixels; how see-through (0-1)
 const SPLAT_LAND_MS=3000; // they keep landing over this long after the kill, so the glass keeps dripping through the pause
 let blood=null,splats=[];
 function bloodBurst(x,y){const d=[];
@@ -781,7 +796,7 @@ function bloodBurst(x,y){const d=[];
   for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,r=20+70*Math.random(); // where along the spray it hits the glass
     splats.push({x:Math.min(228,Math.max(12,x+Math.cos(a)*r)),y:Math.min(232,Math.max(10,y+Math.sin(a)*r)),
       t0:animT+80+Math.pow(Math.random(),1.6)*SPLAT_LAND_MS, // lands soon after the kill, most of them early
-      r:2.2+Math.random()*1.4,              // drop size (radius), board pixels
+      r:1.8+Math.random()*2.0,              // drop size (radius), board pixels: a mix of small and large
       wait:0.15+Math.random()*0.25,         // sits this long before it starts to run, seconds
       run:1.6+Math.random()*1.2,            // then runs down for this long
       len:SPLAT_RUN*(0.8+Math.random()*0.4)});}}
@@ -1191,7 +1206,8 @@ const touchSweep=e=>{const live=[...e.touches].map(t=>t.target);
   for(const h of holds)if(h.touch&&!live.some(t=>t===h.el||h.el.contains(t))){I[h.k]=0;h.touch=false;h.el.classList.remove('on');}};
 ['touchend','touchcancel'].forEach(t=>document.addEventListener(t,touchSweep,{capture:true,passive:true}));
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(pid!==null)padRel();for(const h of holds){I[h.k]=0;h.touch=false;h.el.classList.remove('on');}}});
-document.addEventListener('visibilitychange',()=>{paused=document.hidden;});
+document.addEventListener('visibilitychange',()=>{paused=document.hidden;if(!document.hidden)au.wake();});
+addEventListener('pageshow',()=>au.wake());addEventListener('focus',()=>au.wake());
 // Safari: block pinch/double-tap zoom and long-press menus that hijack game touches
 ['gesturestart','gesturechange','dblclick','contextmenu','selectstart'].forEach(t=>document.addEventListener(t,e=>e.preventDefault(),{passive:false}));
 // iPadOS: a finger held still on a control can start its long-press text-selection gesture (the magnifier loupe), which
