@@ -324,15 +324,14 @@ function TargAudio(){
     const d=s.data,e=s.dataR,n=d.length,F=Math.min(n,Math.round(0.03*sr));let tail=0;for(let i=n-F;i<n;i++)tail=Math.max(tail,Math.abs(d[i]),Math.abs(e[i]));
     if(tail>=98){const c=new Int16Array(d),cr=same?c:new Int16Array(e);for(let i=0;i<F;i++){const g=1-(i+1)/F,j=n-F+i;c[j]=Math.round(c[j]*g);if(!same)cr[j]=Math.round(cr[j]*g);}s.data=c;s.dataR=cr;}
     s.start=s.end=s.rms=null;};
-  let abTurn=0;try{abTurn=+localStorage.getItem('targ.screechAB')||0;}catch(e){}
-  A.screechAB=()=>{const k=abTurn%2?'screechB':'screechA';abTurn=(abTurn+1)%2;try{localStorage.setItem('targ.screechAB',abTurn);}catch(e){}
-    const use=A.has(k)?k:A.has('screech')?'screech':null;if(!use)return null;if(use!=='screech')abPrep(use);
+  // the creature's death scream: alien_death_throes.wav ('throes'), or alien_screech.wav if that is missing
+  A.deathScream=()=>{const use=A.has('throes')?'throes':A.has('screech')?'screech':null;if(!use)return null;if(use!=='screech')abPrep(use);
     if(use!=='screech'&&A.abMatch&&!S[use].matched&&A.has('screech')){const l=A.loud(use);if(l>0)S[use].gain=Math.min(8,S.screech.gain*A.loud('screech')/l);S[use].matched=true;}
     return A.sample(use);};
   // the death scream plays alone: every other sound is silent (10 ms fade) until it ends - or, with A.screamSolo
   // 'freeze', only until the board moves again (A.screamFree() is called then)
   A.screamSolo='scream';A.screamV=null;
-  A.scream=()=>{const v=A.screechAB();if(v){v.pri=true;v.solo=true;A.screamV=v;}return v;};
+  A.scream=()=>{const v=A.deathScream();if(v){v.pri=true;v.solo=true;A.screamV=v;}return v;};
   A.screamFree=()=>{if(A.screamSolo==='freeze'&&A.screamV)A.screamV.solo=false;};
   A.playing=vo=>!!vo&&voices.includes(vo);
   // where a recorded sound becomes inaudible (below about -50 dB), in seconds: used to line sounds up end to end
@@ -426,18 +425,17 @@ const au=new TargAudio();window.au=au;au.create();
 // robot taunts: when a car is lost and the screen has to be played again, TAUNT_ODDS is the chance (0.2 = 1 in 5) that
 // one of these is heard, picked at random (never the same one twice in a row). It starts TAUNT_GAP s after the crash
 // sound has finished. [file, volume]: the volumes even out the files' different loudness.
-// A/B test of the creature's death screech: kills alternate A, B, A, B... The turn is remembered on the device, so it
-// carries on across games and reloads. If one of the two files is missing, alien_screech.wav plays in its place.
-// AB_MATCH: each is set so its loudest moment matches alien_screech.wav's at 2.0, so neither wins just by being louder.
-// Either way, silence at the start is skipped (so both start the instant the creature dies) and a file that ends while
-// still audible gets a 30 ms fade-out instead of a click.
-const SCREECH_AB=['sounds/alien_scream_A.wav','sounds/alien_scream_B.wav'],AB_MATCH=true;
+// The creature's death scream. If the file is missing, alien_screech.wav plays in its place.
+// SCREAM_MATCH: its volume is set so its loudest moment matches alien_screech.wav's at 2.0 (a touch louder than the
+// free-man sound). Silence at its start is skipped (so it starts the instant the creature dies), and if the file ends
+// while still audible it gets a 30 ms fade-out instead of a click.
+const DEATH_SCREAM='sounds/alien_death_throes.wav',SCREAM_MATCH=true;
 const SCREAM_SOLO='scream'; // 'scream': every other sound is silent until the death scream ends; 'freeze': only until the board moves again
 const TAUNTS=[['we_got_you_REVERB.mp3',0.32],['collision_detected.mp3',0.33],['humanoid_failed.mp3',0.22],['goodbye.m4a',0.82],['always_wins.m4a',0.91],['get_outta_town.m4a',1.04],['go_back_to_earth.m4a',1.08],['better_luck_next_time.m4a',1.0]],TAUNT_ODDS=0.2,TAUNT_GAP=0.5;
 au.taunts=TAUNTS.map(t=>t[0]);au.tauntOdds=TAUNT_ODDS;au.tauntGap=TAUNT_GAP;
 au.load('kill','sounds/btr.flac',0.85);au.load('hyper','sounds/defstart.wav',0.7);au.load('spectar','sounds/df4.wav',0.7);au.load('freeman','sounds/deffreem.wav',0.6);
 const names=(...b)=>b.flatMap(n=>['wav','mp3','m4a','flac','ogg','aiff','aif'].map(e=>`sounds/${n}.${e}`));
-au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/car_dies.m4a','sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('screech','sounds/alien_screech.wav',2.0);au.screamSolo=SCREAM_SOLO;au.abMatch=AB_MATCH;au.load('screechA',SCREECH_AB[0],2.0);au.load('screechB',SCREECH_AB[1],2.0);/* 2.0: a touch louder (+0.6 dB) than the free-man sound, measured through the output's soft limiter */au.load('fire','sounds/pewpewnewer.wav',0.28);/* 0.28: the level pewpewnew.wav and gun.wav used; any silence at the start of the file is skipped */au.load('asmr','sounds/Targ_ASMR.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.load('fwboom','sounds/fireworks_audio_only.m4a',0.5);au.load('ohm','sounds/earth_ohm.m4a',0.63);/* 0.63 = +10 dB over 0.2, heard as about twice as loud */for(const [f,g] of TAUNTS)au.load(f,'sounds/'+f,g);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
+au.loadAny('skid',['sounds/Targ_skid.m4a',...names('Targ_skid','Skid','skid')],0.9);au.loadAny('crash',['sounds/car_dies.m4a','sounds/player_destroyed.mp3',...names('player_destroyed','Crash','crash')],0.1);au.loadAny('fanfare',['sounds/Targ_FanFare_trumpets.m4a',...names('Targ_FanFare_trumpets','Targ_Fanfare','Fanfare')],1.9);au.load('coin','sounds/coin-drop_soundFX.mp3',0.8);au.load('bonus','sounds/Targ_Bonus_Screen_Fanfare.mp3',0.85);au.load('goodjob','sounds/Good_Job_Bonus.mp3',0.5);au.load('daytrip','sounds/DayTrip10.m4a',1.5);au.load('screech','sounds/alien_screech.wav',2.0);au.screamSolo=SCREAM_SOLO;au.abMatch=SCREAM_MATCH;au.load('throes',DEATH_SCREAM,2.0);/* 2.0: a touch louder (+0.6 dB) than the free-man sound, measured through the output's soft limiter */au.load('fire','sounds/pewpewnewer.wav',0.28);/* 0.28: the level pewpewnew.wav and gun.wav used; any silence at the start of the file is skipped */au.load('asmr','sounds/Targ_ASMR.m4a',0.8);au.load('jump','sounds/Jumpstart_Targ.mp3',0.6);au.load('intruder','sounds/intruder_alert.mp3',0.6);au.load('alarm','sounds/sound-fx-alarm.mp3',0.55);au.load('fireworks','sounds/Fireworks.mp3',0.45);au.load('fwboom','sounds/fireworks_audio_only.m4a',0.5);au.load('ohm','sounds/earth_ohm.m4a',0.63);/* 0.63 = +10 dB over 0.2, heard as about twice as loud */for(const [f,g] of TAUNTS)au.load(f,'sounds/'+f,g);au.loadAny('gameover',['sounds/Game_Over.mp3',...names('Game_Over','game_over')],0.8);const sev=[];let f0=0;const FCYC=Math.round(11289000/16/60);
 m.sndWrite=(a,v)=>sev.push([m.cpu.cycles-f0,a,v]);
 const unlock=()=>{au.unlock();fwPrime();};['pointerdown','touchstart','pointerup','touchend','keydown'].forEach(t=>addEventListener(t,unlock,{capture:true,passive:true}));
 document.getElementById('snd').addEventListener('pointerdown',e=>{e.preventDefault();au.unlock();e.target.textContent=au.toggle()?'🔊':'🔇';});
@@ -725,7 +723,7 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
 // creature.png: a strip of square frames side by side, the creature seen from the side with its FRONT (the eye)
 // TO THE LEFT. Left: as drawn; right: mirrored (so it stays upright); up and down: turned a quarter.
 const SPEC_SIG=[[0xC1,[0x18,0x24,0x24,0x18,0x2C,0x76,0xBD,0x81]],[0xD0,[0xC0,0x20,0x76,0x69,0x59,0x76,0x20,0xC0]]];
-const CREATURE_FRAME_MS=60;   // how long each frame is shown (21 frames x 60 = one stride every 1.26 s)
+const CREATURE_FRAME_MS=40;   // how long each frame is shown (21 frames x 40 = one stride every 0.84 s)
 // How big the creature is drawn: the width of one frame of creature.png, in game pixels (the Spectar's own square
 // is 8). The lanes are 10 game pixels between blocks; at 20, this 2:1 creature is 9.7 tall and just fits. Display
 // only: what the car collides with is still the game's own 8x8 Spectar in the middle, so a leg tip reaching
@@ -772,7 +770,8 @@ const BLOOD_DROPS=900,BLOOD_LIFE=2000; // drops, and how long the burst lasts in
 const BLOOD_TAU=0.07; // seconds: smaller = a harder, faster first burst that then slows more sharply
 // A few drops fly at the screen instead and hit it like a windshield: they splat, sit a moment, then trickle down
 // the glass and dry up. Only these are see-through, so they never hide the game under them.
-const SPLAT_MIN=3,SPLAT_MAX=6,SPLAT_RUN=15,SPLAT_ALPHA=0.55; // how many land (at random, between the two); how far each runs down, in board pixels; how see-through (0-1)
+const SPLAT_MIN=10,SPLAT_MAX=16,SPLAT_RUN=15,SPLAT_ALPHA=0.55; // how many land (at random, between the two); how far each runs down, in board pixels; how see-through (0-1)
+const SPLAT_LAND_MS=3000; // they keep landing over this long after the kill, so the glass keeps dripping through the pause
 let blood=null,splats=[];
 function bloodBurst(x,y){const d=[];
   for(let i=0;i<BLOOD_DROPS;i++){const a=Math.random()*Math.PI*2,A=6+94*Math.sqrt(Math.random()); // reach: most drops fly far
@@ -781,10 +780,10 @@ function bloodBurst(x,y){const d=[];
   const n=SPLAT_MIN+Math.floor(Math.random()*(SPLAT_MAX-SPLAT_MIN+1));
   for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,r=20+70*Math.random(); // where along the spray it hits the glass
     splats.push({x:Math.min(228,Math.max(12,x+Math.cos(a)*r)),y:Math.min(232,Math.max(10,y+Math.sin(a)*r)),
-      t0:animT+80+Math.random()*420,       // lands 0.08-0.5 s into the burst
+      t0:animT+80+Math.pow(Math.random(),1.6)*SPLAT_LAND_MS, // lands soon after the kill, most of them early
       r:2.2+Math.random()*1.4,              // drop size (radius), board pixels
       wait:0.15+Math.random()*0.25,         // sits this long before it starts to run, seconds
-      run:1.2+Math.random()*0.6,            // then runs down for this long
+      run:1.6+Math.random()*1.2,            // then runs down for this long
       len:SPLAT_RUN*(0.8+Math.random()*0.4)});}}
 function drawBlood(){ // with the overlay scaled to board pixels
   if(!blood)return;const t=(animT-blood.t0)/1000;if(t>BLOOD_LIFE/1000){blood=null;return;}
@@ -812,36 +811,83 @@ function drawSplats(){ // drops on the "glass", drawn over everything else
 // is told three things about the car - X, Y and a picture number (0 up, 1 down, 2 right, 3 left; 8 and up are the
 // explosion). When the number is 0-3 the blocky 8x8 picture is skipped and a frame of car.png is painted over the
 // very same 8x8 pixels, turned to face the same way. Explosions keep the original pictures.
-// car.png is a strip of square frames side by side (as many as its width divided by its height), each showing the
+// car_24/32/40/48.png (native pixel art, one per overlay size) and car.png (fall-back) are strips of square frames side by side (as many as its width divided by its height), each showing the
 // car from above with its FRONT TO THE RIGHT and the artwork reaching the edges of its square.
 // The wheels turn with the distance the car actually drives, not with time: slower car, slower wheels; car
 // stopped (at a corner, or frozen), wheels stopped. The game moves the car 0-2 px a frame, about 1.1 on average.
-const TIRE_CYCLE_PX=8;        /* game pixels driven for one full turn through the car's 4 frames: a new frame every 2 px */
+// ---- wheel art: native pixel-art strips car_24.png / car_32.png / car_40.png / car_48.png (see the wheel notes below) ----
+// The overlay draws the car at S = 8*FXS screen pixels, FXS = 3..6, so S is always 24, 32, 40 or 48. Each strip has
+// one pre-drawn frame per tread step, drawn at exactly S px, so NOTHING is smoothed: the tread bars stay crisp
+// (2 px light bars, constant light-pixel count in every frame, one colour) and shift exactly 1 px per frame toward
+// the car's front. Only whole-pixel scaling and exact 90-degree turns are done here.
+// The old smoothed car.png is still loaded as a last resort if no car_NN.png can be found.
+const CAR_SIZES=[24,32,40,48];     // native strips available (car_<size>.png, a horizontal strip of square frames)
+const TIRE_STEP_PX=5;              /* game pixels driven per tread step (= one frame of the strip). The game drives the car
+                                      ~1.1 px per tick, 60 ticks/s -> ~66 px/s -> ~13 frame changes/s (about 10-15 is the sweet spot:
+                                      each change is a 1 px move, so the bars look like they glide instead of flicker).
+                                      Equivalent to the old TIRE_CYCLE_PX = TIRE_STEP_PX * number of frames (20 for a 4-frame strip). */
+// ---- optional extras (set false to turn off) ----
+const CAR_TRAIL=true;              // faint 1 px tyre tracks behind the car that fade out
+const CAR_TRAIL_MS=300, CAR_TRAIL_ALPHA=0.30;
+const CAR_BOB=false;               // the whole car steps 1 screen px up/down every CAR_BOB_EVERY_PX game px driven
+const CAR_BOB_EVERY_PX=12;
 let carDist=0,carLX=-1,carLY=-1;
 function carRoll(){ // called once per game frame: adds up how far the car has driven
   const x=m.ram[0x1c],y=m.ram[0x1d];
   if(carLX>=0&&alive()){const d=Math.abs(x-carLX)+Math.abs(y-carLY);if(d<8)carDist+=d;} // bigger jumps are a respawn or hyperspace, not driving
   carLX=x;carLY=y;}
 const CAR_ART_FACES=0;        // which way the artwork's front points: 0 right, 1 down, 2 left, 3 up
-const carImg=new Image();let carOK=false,carN=0,carSpr=null;
-carImg.onload=()=>{const w=carImg.naturalWidth,h=carImg.naturalHeight;if(!w||!h)return;carN=Math.max(1,Math.round(w/h));carOK=true;carSpr=null;};
-carImg.src='car.png';
+let carOK=false,carN=0,carSpr=null,carLegacy=null;const carStrips={};
+const carTrailList=[]; // {X,Y,pc,S,t}: where the car was, to draw the fading tyre tracks (CAR_TRAIL)
+function carLoad(src,cb){const im=new Image();im.onload=()=>{if(im.naturalWidth&&im.naturalHeight){cb(im);carOK=true;carSpr=null;}};im.src=src;}
+CAR_SIZES.forEach(s=>carLoad('car_'+s+'.png',im=>{carStrips[s]=im;}));
+carLoad('car.png',im=>{carLegacy=im;});   // fall-back (and the original art, if you keep it there)
+function carPick(S){ // the strip drawn at S, else the nearest size (larger wins a tie), else the old car.png
+  let best=null,bd=1e9;for(const k in carStrips){const d=Math.abs(k-S)*2-(k>S?1:0);if(d<bd){bd=d;best=carStrips[k];}}
+  return best?{img:best,native:true}:(carLegacy?{img:carLegacy,native:false}:null);}
+function carTurnPixels(a,n,q){ // pure: n*n pixels turned q quarter turns clockwise, exactly (no resampling)
+  q=((q%4)+4)%4;if(!q)return a.slice();const b=new Uint32Array(n*n);
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){const nx=q===1?n-1-y:q===2?n-1-x:y,ny=q===1?x:q===2?n-1-y:n-1-x;b[ny*n+nx]=a[y*n+x];}
+  return b;}
+function carTurn(c,q){const n=c.width,g=c.getContext('2d',{willReadFrequently:true}),s=g.getImageData(0,0,n,n),o=document.createElement('canvas');o.width=o.height=n;
+  const og=o.getContext('2d'),d=og.createImageData(n,n);new Uint32Array(d.data.buffer).set(carTurnPixels(new Uint32Array(s.data.buffer),n,q));og.putImageData(d,0,0);return o;}
 function buildCarSprites(){ // [direction][frame] at exactly 8 game pixels = 8*FXS screen pixels
-  const S=8*FXS,fh=carImg.naturalHeight,fw=carImg.naturalWidth/carN,frames=[];
-  for(let i=0;i<carN;i++){let c=document.createElement('canvas');c.width=c.height=fh;let g=c.getContext('2d');g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
-    g.drawImage(carImg,i*fw,0,fw,fh,0,0,fh,fh);let w=fh;
-    while(w>=S*2){const h2=document.createElement('canvas');h2.width=h2.height=w>>1;const g2=h2.getContext('2d');g2.imageSmoothingEnabled=true;g2.drawImage(c,0,0,w>>1,w>>1);c=h2;w>>=1;} // halve step by step for a clean reduction
+  const S=8*FXS,p=carPick(S);if(!p)return;const img=p.img,fh=img.naturalHeight,N=Math.max(1,Math.round(img.naturalWidth/fh)),fw=img.naturalWidth/N,frames=[];
+  for(let i=0;i<N;i++){let c=document.createElement('canvas');c.width=c.height=fh;let g=c.getContext('2d',{willReadFrequently:true});
+    g.imageSmoothingEnabled=!p.native;g.imageSmoothingQuality='high';g.drawImage(img,i*fw,0,fw,fh,0,0,fh,fh);let w=fh;
+    if(p.native){ // hard pixels only: whole-pixel (nearest-neighbour) scaling if the strip is not exactly S px
+      if(w!==S){const c2=document.createElement('canvas');c2.width=c2.height=S;const g2=c2.getContext('2d',{willReadFrequently:true});g2.imageSmoothingEnabled=false;g2.drawImage(c,0,0,w,w,0,0,S,S);c=c2;}}
+    else{ // the old smoothed route, for car.png art that is not pixel art
+      while(w>=S*2){const h2=document.createElement('canvas');h2.width=h2.height=w>>1;const g2=h2.getContext('2d',{willReadFrequently:true});g2.imageSmoothingEnabled=true;g2.drawImage(c,0,0,w>>1,w>>1);c=h2;w>>=1;}
+      const c2=document.createElement('canvas');c2.width=c2.height=S;const g2=c2.getContext('2d',{willReadFrequently:true});g2.imageSmoothingEnabled=true;g2.imageSmoothingQuality='high';g2.drawImage(c,0,0,S,S);c=c2;}
     frames.push(c);}
   // picture number -> quarter turns clockwise from "facing right": up = 3, down = 1, right = 0, left = 2
-  carSpr=[3,1,0,2].map(q=>frames.map(f=>{const c=document.createElement('canvas');c.width=c.height=S;const g=c.getContext('2d');
-    g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.translate(S/2,S/2);g.rotate((q-CAR_ART_FACES)*Math.PI/2);g.drawImage(f,-S/2,-S/2,S,S);return c;}));
+  carSpr=[3,1,0,2].map(q=>frames.map(f=>carTurn(f,q-CAR_ART_FACES)));carN=N;carTrailList.length=0;
 }
-function carReady(){if(!carOK)return false;if(!carSpr)buildCarSprites();return true;}
+function carReady(){if(!carOK)return false;if(!carSpr)buildCarSprites();return !!carSpr;}
+// ---- optional: fading tyre tracks ----
+function carTurnPoint(x,y,n,q){q=((q%4)+4)%4;return q===1?[n-1-y,x]:q===2?[n-1-x,n-1-y]:q===3?[y,n-1-x]:[x,y];}
+function carTrail(X,Y,pc,S){
+  const now=performance.now(),L=carTrailList,last=L[L.length-1];
+  if(!last||last.X!==X||last.Y!==Y)L.push({X,Y,pc,S,t:now});
+  while(L.length&&now-L[0].t>CAR_TRAIL_MS)L.shift();
+  const q=([3,1,0,2][pc]-CAR_ART_FACES),lx=Math.round(S*0.25),ly=Math.round(S*0.16),pts=[carTurnPoint(lx,ly,S,q),carTurnPoint(lx,S-1-ly,S,q)];
+  fx.save();
+  for(let i=1;i<L.length;i++){const a=L[i-1],b=L[i];
+    if(a.pc!==b.pc||a.S!==b.S||Math.abs(a.X-b.X)+Math.abs(a.Y-b.Y)>3*S)continue; // turned, or jumped (respawn): no streak
+    fx.fillStyle='rgba(210,210,200,'+(CAR_TRAIL_ALPHA*(1-(now-b.t)/CAR_TRAIL_MS)).toFixed(3)+')';
+    for(const [px,py] of pts){const x0=Math.min(a.X,b.X)+px,y0=Math.min(a.Y,b.Y)+py;fx.fillRect(x0,y0,Math.abs(a.X-b.X)+1,Math.abs(a.Y-b.Y)+1);}}
+  fx.restore();
+}
 function drawCar(){ // called with the overlay at 1:1 canvas pixels
   const pc=(m.mol&15)|((m.cpl&0x20)?16:0);if(m.hideP||pc>=4)return;
   if(!carSpr)buildCarSprites(); // the overlay's resolution has just changed: make them again at the new size
+  if(!carSpr)return;
   // same place the blocky picture goes: the hardware position counts from the right and from the bottom
-  fx.drawImage(carSpr[pc][Math.floor(((carDist%TIRE_CYCLE_PX)/TIRE_CYCLE_PX)*carN)%carN],(224-m.s1x)*FXS,(240-m.s1y)*FXS);
+  const X=(224-m.s1x)*FXS;let Y=(240-m.s1y)*FXS;
+  if(CAR_TRAIL)carTrail(X,Y,pc,8*FXS);
+  if(CAR_BOB&&(Math.floor(carDist/CAR_BOB_EVERY_PX)&1))Y-=1;
+  fx.drawImage(carSpr[pc][Math.floor(carDist/TIRE_STEP_PX)%carN],X,Y);
 }
 
 // ---------- missile pictures (see MISSILE_ART) ----------
@@ -1036,7 +1082,8 @@ let bonusLen=0;
 
 // ---------- main loop ----------
 let paused=false,last=performance.now(),acc=0;
-const SPEC_KILL_HOLD=62; // frames (60 a second) the board is held still when a Spectar is shot, on top of the game's own pause: 62 = 1,033 ms
+const SPEC_KILL_HOLD=62; // frames (60 a second): the shortest the board is held still when a Spectar is shot, on top of the game's own pause
+const SPEC_KILL_MAX=720;  // ...and it is held until the death scream has played to its end, but never longer than this (720 = 12 s)
 const BOOM=[[8,8],[9,9],[10,8],[11,9],[12,8],[13,30]]; // the game's explosion: [picture, frames], measured from the game itself
 function step(){
   if(cd>0)cd--;
@@ -1047,7 +1094,7 @@ function step(){
       let k=z.f,pic=15;for(const [pp,n] of BOOM){if(k<n){pic=pp;break;}k-=n;}
       m.mol=(m.mol&0xf0)|pic;
       if(++z.f>=z.dur){m.mol=(m.mol&0xf0)|z.pc0;frozen=null;au.hold=false;m.hideBoom=true;}} // the game resumes exactly where it stopped
-    else if(frozen.type==='hold'){if(++frozen.f>=frozen.dur){if(frozen.spec)au.screamFree();frozen=null;}} // bonus screen / Spectar kill held (no button skips it)
+    else if(frozen.type==='hold'){++frozen.f;if(frozen.f>=frozen.dur&&!(frozen.spec&&frozen.f<SPEC_KILL_MAX&&au.playing(au.screamV))){if(frozen.spec)au.screamFree();frozen=null;}} // bonus screen / Spectar kill held (no button skips it); a Spectar kill waits for its scream to end
     else{const z=frozen; // screen-clear celebration: always plays in full, FIRE does not cut it short
       if(++z.f>=z.dur)fanEnd();}return;}
   const wasAlive=alive(),a8=m.ram[0xa8];f0=m.cpu.cycles;m.frame();
