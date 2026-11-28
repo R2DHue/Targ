@@ -725,12 +725,17 @@ function drawEnemies(){ // called with the overlay at 1:1 canvas pixels
 // creature.png: a strip of square frames side by side, the creature seen from the side with its FRONT (the eye)
 // TO THE LEFT. Left: as drawn; right: mirrored (so it stays upright); up and down: turned a quarter.
 const SPEC_SIG=[[0xC1,[0x18,0x24,0x24,0x18,0x2C,0x76,0xBD,0x81]],[0xD0,[0xC0,0x20,0x76,0x69,0x59,0x76,0x20,0xC0]]];
-const CREATURE_FRAME_MS=60;   // how long each frame is shown (16 frames x 60 = one stride every 0.96 s)
+const CREATURE_FRAME_MS=60;   // how long each frame is shown (21 frames x 60 = one stride every 1.26 s)
+// How big the creature is drawn: the width of one frame of creature.png, in game pixels (the Spectar's own square
+// is 8). The lanes are 10 game pixels between blocks; at 20, this 2:1 creature is 9.7 tall and just fits. Display
+// only: what the car collides with is still the game's own 8x8 Spectar in the middle, so a leg tip reaching
+// past it is harmless - only running into the body and the legs near it is a crash.
+const CREATURE_SIZE=20;
 const specImg=new Image();let specOK=false,specN=0,specSpr=null,specPos=null,specFace=0,specDead=false; // specDead: shot - not drawn until the game takes it off the board // face: 0 left, 1 right, 2 up, 3 down
 specImg.onload=()=>{const w=specImg.naturalWidth,h=specImg.naturalHeight;if(!w||!h)return;specN=Math.max(1,Math.round(w/h));specOK=true;specSpr=null;};
 specImg.src='creature.png';
 function buildSpecSprites(){
-  const S=8*FXS,fw=specImg.naturalWidth/specN,fh=specImg.naturalHeight,frames=[];
+  const S=Math.round(CREATURE_SIZE*FXS),fw=specImg.naturalWidth/specN,fh=specImg.naturalHeight,frames=[];
   for(let f=0;f<specN;f++){let src=document.createElement('canvas'),w=Math.round(fh);src.width=src.height=w;src.getContext('2d').drawImage(specImg,f*fw,0,fw,fh,0,0,w,w);
     while(w>=S*2){const h=document.createElement('canvas');h.width=h.height=w>>1;const g=h.getContext('2d');g.imageSmoothingEnabled=true;g.drawImage(src,0,0,w>>1,w>>1);src=h;w>>=1;}
     frames.push(src);}
@@ -753,9 +758,10 @@ function specFind(){ // the Spectar's 8x8 square on the board (in board pixels),
   if(specPos){const dx=p.x-specPos.x,dy=p.y-specPos.y;if(Math.abs(dx)>Math.abs(dy))specFace=dx<0?0:1;else if(dy)specFace=dy<0?2:3;}
   specPos=p;
 }
-function drawSpectar(){
+function drawSpectar(){ // centred on the Spectar's 8x8 square, drawn CREATURE_SIZE across
   if(!specPos||specDead)return;if(!specSpr)buildSpecSprites();
-  fx.drawImage(specSpr[specFace][((animT/CREATURE_FRAME_MS)|0)%specN],(specPos.x-8)*FXS,specPos.y*FXS);
+  const spr=specSpr[specFace][((animT/CREATURE_FRAME_MS)|0)%specN],o=(spr.width-8*FXS)/2;
+  fx.drawImage(spr,(specPos.x-8)*FXS-o,specPos.y*FXS-o);
 }
 // When the Spectar is shot it bursts: hundreds of drops of blood fly out in every direction, far enough to cross the
 // whole board, darkening and fading as they go (after the player's-ship explosion in Defender).
